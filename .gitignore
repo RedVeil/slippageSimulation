@@ -1,0 +1,10 @@
+.env
+cache/
+typechain
+coverage/
+coverage.json
+artifacts
+artifacts-ovm
+cache
+cache-ovm
+node_modules
