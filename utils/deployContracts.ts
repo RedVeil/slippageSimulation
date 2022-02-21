@@ -42,8 +42,8 @@ export interface Contracts {
   faucet: Faucet;
   basicIssuanceModule: BasicIssuanceModule;
   threePool: CurveMetapool;
-  metapools:Metapools;
-  vaults:Vaults;
+  metapools: Metapools;
+  vaults: Vaults;
   butterBatch: ButterBatchProcessing;
 }
 
@@ -72,22 +72,25 @@ const FRAX_METAPOOL_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
 const RAI_METAPOOL_ADDRESS = "0x618788357D0EBd8A37e763ADab3bc575D54c2C7d";
 const OUSD_METAPOOL_ADDRESS = "0x87650D7bbfC3A9F10587d7778206671719d9910D";
 
-export async function deployToken(ethers, owner:SignerWithAddress): Promise<Token> {
+export async function deployToken(
+  ethers,
+  owner: SignerWithAddress
+): Promise<Token> {
   const setTokenCreator = await ethers.getContractAt(
     SetTokenCreator.abi,
     SET_TOKEN_CREATOR_ADDRESS
   );
- const setTokenAddress = await setTokenCreator.callStatic.create(
-    [Y_CRV_FRAX_ADDRESS, Y_CRV_RAI_ADDRESS, Y_CRV_OUSD_ADDRESS],
+  const setTokenAddress = await setTokenCreator.callStatic.create(
+    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_OUSD_ADDRESS],
     [parseEther("33"), parseEther("33"), parseEther("33")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
     "Butter2",
     "BTR2"
   );
-  
+
   await setTokenCreator.create(
-    [Y_CRV_FRAX_ADDRESS, Y_CRV_RAI_ADDRESS, Y_CRV_OUSD_ADDRESS],
+    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_OUSD_ADDRESS],
     [parseEther("33"), parseEther("33"), parseEther("33")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
@@ -151,7 +154,7 @@ export async function deployToken(ethers, owner:SignerWithAddress): Promise<Toke
 export default async function deployContracts(
   ethers,
   network,
-  owner:SignerWithAddress
+  owner: SignerWithAddress
 ): Promise<Contracts> {
   const token = await deployToken(ethers, owner);
 
@@ -163,7 +166,7 @@ export default async function deployContracts(
       CURVE_FACTORY_METAPOOL_DEPOSIT_ZAP_ADDRESS
     )
   ).deployed();
-  
+
   const aclRegistry = await (
     await (await ethers.getContractFactory("ACLRegistry")).deploy()
   ).deployed();
@@ -240,18 +243,26 @@ export default async function deployContracts(
 
   await basicIssuanceModule
     .connect(owner)
-    .initialize(token.setToken.address, "0x0000000000000000000000000000000000000000");
+    .initialize(
+      token.setToken.address,
+      "0x0000000000000000000000000000000000000000"
+    );
 
-  const YTOKEN_ADDRESSES = [token.yFrax.address, token.yRai.address, token.yOusd.address];
+  const YTOKEN_ADDRESSES = [
+    token.yRai.address,
+    token.yFrax.address,
+    token.yOusd.address,
+  ];
   const CRV_DEPENDENCIES = [
-    {
-      curveMetaPool: fraxMetapoolContract.address,
-      crvLPToken: token.crvFrax.address,
-    },
     {
       curveMetaPool: raiMetapoolContract.address,
       crvLPToken: token.crvRai.address,
     },
+    {
+      curveMetaPool: fraxMetapoolContract.address,
+      crvLPToken: token.crvFrax.address,
+    },
+
     {
       curveMetaPool: ousdMetapoolContract.address,
       crvLPToken: token.crvOusd.address,
@@ -277,14 +288,13 @@ export default async function deployContracts(
     )
   ).deployed();
 
-
   await butterBatch.setApprovals();
 
   await aclRegistry.grantRole(ethers.utils.id("DAO"), owner.address);
   await aclRegistry.grantRole(ethers.utils.id("Keeper"), owner.address);
 
   await butterBatch.connect(owner).setMintSlippage(1000);
-  await butterBatch.connect(owner).setRedeemSlippage(1000)
+  await butterBatch.connect(owner).setRedeemSlippage(1000);
 
   await contractRegistry
     .connect(owner)
@@ -338,15 +348,15 @@ export default async function deployContracts(
     faucet,
     basicIssuanceModule,
     threePool,
-    metapools:{
-      frax:fraxMetapoolContract,
-      rai:raiMetapoolContract,
-      ousd:ousdMetapoolContract
+    metapools: {
+      frax: fraxMetapoolContract,
+      rai: raiMetapoolContract,
+      ousd: ousdMetapoolContract,
     },
-    vaults:{
-      frax:yFraxVault,
-      rai:yRaiVault,
-      ousd:yOusdVault
+    vaults: {
+      frax: yFraxVault,
+      rai: yRaiVault,
+      ousd: yOusdVault,
     },
     butterBatch,
   };

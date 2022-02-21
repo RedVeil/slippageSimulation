@@ -53,10 +53,10 @@ export default async function simulateSlippage(hre): Promise<void> {
   const network = hre.network;
   const MAX_SLIPPAGE = 0.002;
   const INPUT_AMOUNT = parseEther("1000000");
-  let mintBlockNumber = 14178568;
+  let mintBlockNumber = 14221601;
 
-  const RESET_BLOCK_NUMBER = 12780983; //mintBlockNumber - 10
-  const END_BLOCK_NUMBER = 14185568;
+  const ORGINAL_START_BLOCK_NUMBER = 13956000; // earliest possible block to run the simulation
+  const END_BLOCK_NUMBER = 14244857;
 
   await network.provider.request({
     method: "hardhat_reset",
@@ -72,7 +72,7 @@ export default async function simulateSlippage(hre): Promise<void> {
   const [signer]: SignerWithAddress[] = await ethers.getSigners();
 
   const contracts = await deployContracts(ethers, network, signer);
-  console.log("reset")
+  console.log("reset");
 
   while (mintBlockNumber < END_BLOCK_NUMBER) {
     await network.provider.send("hardhat_setBalance", [
@@ -111,15 +111,15 @@ export default async function simulateSlippage(hre): Promise<void> {
     ).claimableTokenBalance;
 
     const componentMap: ComponentMap = {
-      [contracts.token.yFrax.address.toLowerCase()]: {
-        name: "yFRAX",
-        metaPool: contracts.metapools.frax,
-        yPool: contracts.vaults.frax,
-      },
       [contracts.token.yRai.address.toLowerCase()]: {
         name: "yRAI",
         metaPool: contracts.metapools.rai,
         yPool: contracts.vaults.rai,
+      },
+      [contracts.token.yFrax.address.toLowerCase()]: {
+        name: "yFRAX",
+        metaPool: contracts.metapools.frax,
+        yPool: contracts.vaults.frax,
       },
       [contracts.token.yOusd.address.toLowerCase()]: {
         name: "yOUSD",
@@ -155,7 +155,7 @@ export default async function simulateSlippage(hre): Promise<void> {
     console.log(
       "-----------------------------------------------------------------------------"
     );
-    Array(35)
+    Array(240)
       .fill(0)
       .forEach(async (x) => await ethers.provider.send("evm_mine", []));
     //mintBlockNumber = mintBlockNumber + 30;

@@ -18,8 +18,6 @@ import "../../../externals/interfaces/CurveContracts.sol";
 import "../../interfaces/IStaking.sol";
 import "../../interfaces/IKeeperIncentive.sol";
 
-import "hardhat/console.sol";
-
 /*
  * @notice This Contract allows smaller depositors to mint and redeem Butter (formerly known as HYSI) without needing to through all the steps necessary on their own,
  * which not only takes long but mainly costs enormous amounts of gas.
@@ -27,7 +25,7 @@ import "hardhat/console.sol";
  * This means multiple approvals and deposits are necessary to mint one Butter.
  * We batch this process and allow users to pool their funds. Then we pay a keeper to mint or redeem Butter regularly.
  */
-contract ButterBatchProcessing is
+contract ButterBatchProcessingCleaned is
   Pausable,
   ReentrancyGuard,
   ACLAuth,
@@ -387,7 +385,6 @@ contract ButterBatchProcessing is
    */
   function batchMint() external whenNotPaused keeperIncentive(contractName, 0) {
     Batch storage batch = batches[currentMintBatchId];
-    console.log("supplied: ", batch.suppliedTokenBalance);
     //Check if there was enough time between the last batch minting and this attempt...
     //...or if enough 3CRV was deposited to make the minting worthwhile
     //This is to prevent excessive gas consumption and costs as we will pay keeper to call this function
@@ -423,33 +420,6 @@ contract ButterBatchProcessing is
 
     uint256 butterInVirtualPrice;
 
-    console.log("before");
-    console.log("3crv: ", threeCrv.balanceOf(address(this)));
-    console.log(
-      "crvFrax: ",
-      curvePoolTokenPairs[tokenAddresses[1]].crvLPToken.balanceOf(address(this))
-    );
-    console.log(
-      "crvRai: ",
-      curvePoolTokenPairs[tokenAddresses[0]].crvLPToken.balanceOf(address(this))
-    );
-    console.log(
-      "crvOusd: ",
-      curvePoolTokenPairs[tokenAddresses[2]].crvLPToken.balanceOf(address(this))
-    );
-    console.log(
-      "yFrax: ",
-      YearnVault(tokenAddresses[1]).balanceOf(address(this))
-    );
-    console.log(
-      "yRai: ",
-      YearnVault(tokenAddresses[0]).balanceOf(address(this))
-    );
-    console.log(
-      "yOusd: ",
-      YearnVault(tokenAddresses[2]).balanceOf(address(this))
-    );
-
     for (uint256 i; i < tokenAddresses.length; i++) {
       //Calculate the virtual price of one yToken
       uint256 yTokenInVirtualPrice = (YearnVault(tokenAddresses[i])
@@ -457,19 +427,6 @@ contract ButterBatchProcessing is
         curvePoolTokenPairs[tokenAddresses[i]]
           .curveMetaPool
           .get_virtual_price()) / 1e18;
-
-      console.log(
-        "virtualPrice: ",
-        curvePoolTokenPairs[tokenAddresses[i]].curveMetaPool.get_virtual_price()
-      );
-
-      console.log(
-        "calc_withdraw_one_coin: ",
-        uint256(2e18) -
-          curvePoolTokenPairs[tokenAddresses[i]]
-            .curveMetaPool
-            .calc_withdraw_one_coin(1e18, 1)
-      );
 
       uint256 quantityInVirtualPrice = (quantities[i] * yTokenInVirtualPrice) /
         1e18;
@@ -488,23 +445,20 @@ contract ButterBatchProcessing is
     uint256 remaining = batch.suppliedTokenBalance;
     uint256[] memory poolAllocations = new uint256[](quantities.length);
     uint256[] memory ratios = new uint256[](quantities.length);
-
+    
     for (uint256 i; i < tokenAddresses.length; i++) {
       //Calculate the pool allocation by dividing the suppliedTokenBalance by number of token addresses and take leftovers into account
-      ratios[i] = (butterInVirtualPrice * 1e18) / (quantitiesInVirtualPrice[i]);
+      ratios[i] = (butterInVirtualPrice * 1e18) /
+        (quantitiesInVirtualPrice[i]);
 
-      poolAllocations[i] = ((batch.suppliedTokenBalance * 1e18) /
-        ratios[i]) - leftoversInVirtualPrice[i];
+      poolAllocations[i] = ((batch.suppliedTokenBalance * 1e18) / ratios[i]) - leftoversInVirtualPrice[i];
 
       if (poolAllocations[i] > remaining) {
         poolAllocations[i] = remaining;
       }
       remaining -= poolAllocations[i];
-
-      console.log("poolAllocation Old: ", poolAllocations[i]);
     }
-    console.log("remaining pre loop 2: ", remaining);
-
+    
     uint256 remaining2 = remaining;
     for (uint256 i; i < tokenAddresses.length; i++) {
       uint256 poolAllocation;
@@ -515,8 +469,6 @@ contract ButterBatchProcessing is
           poolAllocation = remaining2;
         }
         remaining2 -= poolAllocation;
-        console.log("remaining: ", remaining2);
-        console.log("poolAllocation New: ", poolAllocation);
       }
 
       //Pool 3CRV to get crvLPToken
@@ -539,66 +491,16 @@ contract ButterBatchProcessing is
         YearnVault(tokenAddresses[i]).balanceOf(address(this))
       );
     }
-    console.log("mid");
-    console.log("3crv: ", threeCrv.balanceOf(address(this)));
-    console.log(
-      "crvFrax: ",
-      curvePoolTokenPairs[tokenAddresses[1]].crvLPToken.balanceOf(address(this))
-    );
-    console.log(
-      "crvRai: ",
-      curvePoolTokenPairs[tokenAddresses[0]].crvLPToken.balanceOf(address(this))
-    );
-    console.log(
-      "crvOusd: ",
-      curvePoolTokenPairs[tokenAddresses[2]].crvLPToken.balanceOf(address(this))
-    );
-    console.log(
-      "yFrax: ",
-      YearnVault(tokenAddresses[1]).balanceOf(address(this))
-    );
-    console.log(
-      "yRai: ",
-      YearnVault(tokenAddresses[0]).balanceOf(address(this))
-    );
-    console.log(
-      "yOusd: ",
-      YearnVault(tokenAddresses[2]).balanceOf(address(this))
-    );
+    
+   //Get the minimum amount of butter that we can mint with our balances of yToken
+    uint256 butterAmount = (YearnVault(tokenAddresses[0]).balanceOf(address(this)) * 1e18) / quantities[0];
 
-    //Get the minimum amount of butter that we can mint with our balances of yToken
-    uint256 butterAmount = (YearnVault(tokenAddresses[0]).balanceOf(
-      address(this)
-    ) * 1e18) / quantities[0];
-    console.log(
-      "expct btr 1: ",
-      (YearnVault(tokenAddresses[0]).balanceOf(address(this)) * 1e18) /
-        quantities[0]
-    );
     for (uint256 i = 1; i < tokenAddresses.length; i++) {
-      console.log("i: ", i);
       butterAmount = Math.min(
         butterAmount,
-        (YearnVault(tokenAddresses[i]).balanceOf(address(this)) * 1e18) /
-          quantities[i]
-      );
-      console.log(
-        "expct btr x: ",
-        (YearnVault(tokenAddresses[i]).balanceOf(address(this)) * 1e18) /
-          quantities[i]
+        (YearnVault(tokenAddresses[i]).balanceOf(address(this)) * 1e18) / quantities[i]
       );
     }
-
-    console.log(
-      "min: ",
-      getMinAmountToMint(
-        valueOf3Crv(batch.suppliedTokenBalance),
-        butterInVirtualPrice,
-        mintSlippage
-      )
-    );
-
-    console.log("btr: ", butterAmount);
 
     require(
       butterAmount >=
@@ -612,20 +514,6 @@ contract ButterBatchProcessing is
 
     //Mint Butter
     setBasicIssuanceModule.issue(setToken, butterAmount, address(this));
-
-    console.log("leftover");
-    console.log(
-      "yFrax: ",
-      YearnVault(tokenAddresses[1]).balanceOf(address(this))
-    );
-    console.log(
-      "yRai: ",
-      YearnVault(tokenAddresses[0]).balanceOf(address(this))
-    );
-    console.log(
-      "yOusd: ",
-      YearnVault(tokenAddresses[2]).balanceOf(address(this))
-    );
 
     //Save the minted amount Butter as claimable token for the batch
     batch.claimableTokenBalance = butterAmount;
