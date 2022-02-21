@@ -1,15 +1,15 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0
+// Docgen-SOLC: 0.6.0
+pragma solidity >=0.6.0;
 
-pragma solidity >=0.6.0 <0.8.0;
-
-import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 import "./MockERC20.sol";
 
 contract MockYearnV2Vault is MockERC20 {
-  using SafeMath for uint256;
   using SafeERC20 for MockERC20;
+  using SafeMath for uint256;
 
   MockERC20 public token;
 
@@ -41,10 +41,7 @@ contract MockYearnV2Vault is MockERC20 {
     return _issueSharesForAmount(msg.sender, amount);
   }
 
-  function deposit(uint256 amount, address recipient)
-    external
-    returns (uint256)
-  {
+  function deposit(uint256 amount, address recipient) external returns (uint256) {
     token.transferFrom(msg.sender, address(this), amount);
     return _issueSharesForAmount(recipient, amount);
   }
@@ -57,10 +54,7 @@ contract MockYearnV2Vault is MockERC20 {
     return tokenAmount;
   }
 
-  function _issueSharesForAmount(address to, uint256 amount)
-    internal
-    returns (uint256)
-  {
+  function _issueSharesForAmount(address to, uint256 amount) internal returns (uint256) {
     uint256 shares = 0;
     if (this.totalSupply() == 0) {
       shares = amount;

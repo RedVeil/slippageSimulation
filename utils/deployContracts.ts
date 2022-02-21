@@ -1,66 +1,51 @@
-import { parseEther } from "@ethersproject/units";
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { Network } from "hardhat/types";
-import { ComponentMap } from "./HYSIBatchInteractionAdapter";
-import CurveMetapoolAbi from "../Curve/CurveMetapoolAbi.json";
-import BasicIssuanceModuleAbi from "../SetToken/vendor/set-protocol/artifacts/BasicIssuanceModule.json";
-import SetTokenAbi from "../SetToken/vendor/set-protocol/artifacts/SetToken.json";
-import { BasicIssuanceModule } from "../SetToken/vendor/set-protocol/types/BasicIssuanceModule";
-import { SetToken } from "../SetToken/vendor/set-protocol/types/SetToken";
+import BasicIssuanceModuleAbi from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/modules/BasicIssuanceModule.sol/BasicIssuanceModule.json";
+import SetToken from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/SetToken.sol/SetToken.json";
+import SetTokenCreator from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/SetTokenCreator.sol/SetTokenCreator.json";
+import FactoryMetapoolAbi from "../Curve/FactoryMetapoolAbi.json";
 import {
-  CurveMetapool,
+  ButterBatchProcessing,
   ERC20,
+  CurveMetapool,
+  BasicIssuanceModule,
   Faucet,
-  HysiBatchInteraction,
-  MockERC20,
   MockYearnV2Vault,
 } from "../typechain";
+import { utils } from "ethers";
+import { parseEther } from "ethers/lib/utils";
+import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
-export interface Contracts {
-  mockPop: MockERC20;
+interface Token {
+  yFrax: ERC20;
+  yRai: ERC20;
+  yOusd: ERC20;
+  crvFrax: ERC20;
+  crvRai: ERC20;
+  crvOusd: ERC20;
   threeCrv: ERC20;
-  crvDUSD: ERC20;
-  crvFRAX: ERC20;
-  crvUSDN: ERC20;
-  crvUST: ERC20;
-  threePool: CurveMetapool;
-  dusdMetapool: CurveMetapool;
-  fraxMetapool: CurveMetapool;
-  usdnMetapool: CurveMetapool;
-  ustMetapool: CurveMetapool;
-  yDUSD: MockYearnV2Vault;
-  yFRAX: MockYearnV2Vault;
-  yUSDN: MockYearnV2Vault;
-  yUST: MockYearnV2Vault;
-  hysi: SetToken;
-  setToken: SetToken; // alias for hysi
-  basicIssuanceModule: BasicIssuanceModule;
-  hysiBatchInteraction: HysiBatchInteraction;
-  faucet: Faucet;
+  pop: ERC20;
+  setToken: ERC20;
 }
 
-const HYSI_TOKEN_ADDRESS = "0x8d1621a27bb8c84e59ca339cf9b21e15b907e408";
+interface Metapools {
+  frax: CurveMetapool;
+  rai: CurveMetapool;
+  ousd: CurveMetapool;
+}
 
-const SET_BASIC_ISSUANCE_MODULE_ADDRESS =
-  "0xd8EF3cACe8b4907117a45B0b125c68560532F94D";
-
-const THREE_CRV_TOKEN_ADDRESS = "0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490";
-
-const THREEPOOL_ADDRESS = "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7";
-const CRV_DUSD_TOKEN_ADDRESS = "0x3a664Ab939FD8482048609f652f9a0B0677337B9";
-const CRV_FRAX_TOKEN_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
-const CRV_USDN_TOKEN_ADDRESS = "0x4f3E8F405CF5aFC05D68142F3783bDfE13811522";
-const CRV_UST_TOKEN_ADDRESS = "0x94e131324b6054c0D789b190b2dAC504e4361b53";
-
-const DUSD_METAPOOL_ADDRESS = "0x8038C01A0390a8c547446a0b2c18fc9aEFEcc10c";
-const FRAX_METAPOOL_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
-const USDN_METAPOOL_ADDRESS = "0x0f9cb53Ebe405d49A0bbdBD291A65Ff571bC83e1";
-const UST_METAPOOL_ADDRESS = "0x890f4e345B1dAED0367A877a1612f86A1f86985f";
-
-const YDUSD_TOKEN_ADDRESS = "0x30fcf7c6cdfc46ec237783d94fc78553e79d4e9c";
-const YFRAX_TOKEN_ADDRESS = "0xb4ada607b9d6b2c9ee07a275e9616b84ac560139";
-const YUSDN_TOKEN_ADDRESS = "0x3b96d491f067912d18563d56858ba7d6ec67a6fa";
-const YUST_TOKEN_ADDRESS = "0x1c6a9783f812b3af3abbf7de64c3cd7cc7d1af44";
+interface Vaults {
+  frax: MockYearnV2Vault;
+  rai: MockYearnV2Vault;
+  ousd: MockYearnV2Vault;
+}
+export interface Contracts {
+  token: Token;
+  faucet: Faucet;
+  basicIssuanceModule: BasicIssuanceModule;
+  threePool: CurveMetapool;
+  metapools:Metapools;
+  vaults:Vaults;
+  butterBatch: ButterBatchProcessing;
+}
 
 const UNISWAP_ROUTER_ADDRESS = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
 const CURVE_ADDRESS_PROVIDER_ADDRESS =
@@ -68,35 +53,108 @@ const CURVE_ADDRESS_PROVIDER_ADDRESS =
 const CURVE_FACTORY_METAPOOL_DEPOSIT_ZAP_ADDRESS =
   "0xA79828DF1850E8a3A3064576f380D90aECDD3359";
 
-const componentMap: ComponentMap = {
-  [YDUSD_TOKEN_ADDRESS]: {
-    name: "yDUSD",
-    metaPool: undefined,
-    yPool: undefined,
-  },
-  [YFRAX_TOKEN_ADDRESS]: {
-    name: "yFRAX",
-    metaPool: undefined,
-    yPool: undefined,
-  },
-  [YUSDN_TOKEN_ADDRESS]: {
-    name: "yUSDN",
-    metaPool: undefined,
-    yPool: undefined,
-  },
-  [YUST_TOKEN_ADDRESS]: {
-    name: "yUST",
-    metaPool: undefined,
-    yPool: undefined,
-  },
-};
+const SET_TOKEN_CREATOR_ADDRESS = "0xeF72D3278dC3Eba6Dc2614965308d1435FFd748a";
+const SET_BASIC_ISSUANCE_MODULE_ADDRESS =
+  "0xd8EF3cACe8b4907117a45B0b125c68560532F94D";
+
+const THREE_CRV_ADDRESS = "0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490";
+const THREE_POOL_ADDRESS = "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7";
+
+const Y_CRV_FRAX_ADDRESS = "0xB4AdA607B9d6b2c9Ee07A275e9616B84AC560139";
+const Y_CRV_RAI_ADDRESS = "0x2D5D4869381C4Fce34789BC1D38aCCe747E295AE";
+const Y_CRV_OUSD_ADDRESS = "0xF59D66c1d593Fb10e2f8c2a6fD2C958792434B9c";
+
+const CRV_FRAX_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
+const CRV_RAI_ADDRESS = "0x6BA5b4e438FA0aAf7C1bD179285aF65d13bD3D90";
+const CRV_OUSD_ADDRESS = "0x87650D7bbfC3A9F10587d7778206671719d9910D";
+
+const FRAX_METAPOOL_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
+const RAI_METAPOOL_ADDRESS = "0x618788357D0EBd8A37e763ADab3bc575D54c2C7d";
+const OUSD_METAPOOL_ADDRESS = "0x87650D7bbfC3A9F10587d7778206671719d9910D";
+
+export async function deployToken(ethers, owner:SignerWithAddress): Promise<Token> {
+  const setTokenCreator = await ethers.getContractAt(
+    SetTokenCreator.abi,
+    SET_TOKEN_CREATOR_ADDRESS
+  );
+ const setTokenAddress = await setTokenCreator.callStatic.create(
+    [Y_CRV_FRAX_ADDRESS, Y_CRV_RAI_ADDRESS, Y_CRV_OUSD_ADDRESS],
+    [parseEther("33"), parseEther("33"), parseEther("33")],
+    [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
+    owner.address,
+    "Butter2",
+    "BTR2"
+  );
+  
+  await setTokenCreator.create(
+    [Y_CRV_FRAX_ADDRESS, Y_CRV_RAI_ADDRESS, Y_CRV_OUSD_ADDRESS],
+    [parseEther("33"), parseEther("33"), parseEther("33")],
+    [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
+    owner.address,
+    "Butter2",
+    "BTR2"
+  );
+
+  const setToken = (await ethers.getContractAt(
+    SetToken.abi,
+    setTokenAddress
+  )) as ERC20;
+
+  const yFrax = (await ethers.getContractAt(
+    "ERC20",
+    Y_CRV_FRAX_ADDRESS
+  )) as ERC20;
+  const yRai = (await ethers.getContractAt(
+    "ERC20",
+    Y_CRV_RAI_ADDRESS
+  )) as ERC20;
+  const yOusd = (await ethers.getContractAt(
+    "ERC20",
+    Y_CRV_OUSD_ADDRESS
+  )) as ERC20;
+
+  const crvFrax = (await ethers.getContractAt(
+    "ERC20",
+    CRV_FRAX_ADDRESS
+  )) as ERC20;
+  const crvRai = (await ethers.getContractAt(
+    "ERC20",
+    CRV_RAI_ADDRESS
+  )) as ERC20;
+  const crvOusd = (await ethers.getContractAt(
+    "ERC20",
+    CRV_OUSD_ADDRESS
+  )) as ERC20;
+
+  const threeCrv = (await ethers.getContractAt(
+    "ERC20",
+    THREE_CRV_ADDRESS
+  )) as ERC20;
+
+  const MockERC20 = await ethers.getContractFactory("MockERC20");
+
+  const pop = await (await MockERC20.deploy("POP", "POP", 18)).deployed();
+
+  return {
+    yFrax,
+    yRai,
+    yOusd,
+    crvFrax,
+    crvRai,
+    crvOusd,
+    threeCrv,
+    pop,
+    setToken,
+  };
+}
 
 export default async function deployContracts(
   ethers,
-  network: Network,
-  owner: SignerWithAddress
+  network,
+  owner:SignerWithAddress
 ): Promise<Contracts> {
-  //Deploy helper Faucet
+  const token = await deployToken(ethers, owner);
+
   const Faucet = await ethers.getContractFactory("Faucet");
   const faucet = await (
     await Faucet.deploy(
@@ -105,171 +163,191 @@ export default async function deployContracts(
       CURVE_FACTORY_METAPOOL_DEPOSIT_ZAP_ADDRESS
     )
   ).deployed();
-  await network.provider.send("hardhat_setBalance", [
-    faucet.address,
-    "0x69e10de76676d0800000", // 500k ETH
-  ]);
-
-  const mockPop = await (
-    await (
-      await ethers.getContractFactory("MockERC20")
-    ).deploy("POP", "POP", 18)
+  
+  const aclRegistry = await (
+    await (await ethers.getContractFactory("ACLRegistry")).deploy()
   ).deployed();
 
-  //Deploy Curve Token
-  const threeCrv = (await ethers.getContractAt(
-    "ERC20",
-    THREE_CRV_TOKEN_ADDRESS
-  )) as ERC20;
+  const contractRegistry = await (
+    await (
+      await ethers.getContractFactory("ContractRegistry")
+    ).deploy(aclRegistry.address)
+  ).deployed();
 
-  const crvDUSD = (await ethers.getContractAt(
-    "ERC20",
-    CRV_DUSD_TOKEN_ADDRESS
-  )) as ERC20;
+  const keeperIncentive = await (
+    await (
+      await ethers.getContractFactory("KeeperIncentive")
+    ).deploy(contractRegistry.address, 0, 0)
+  ).deployed();
 
-  const crvFRAX = (await ethers.getContractAt(
-    "ERC20",
-    CRV_FRAX_TOKEN_ADDRESS
-  )) as ERC20;
+  const popStaking = await (
+    await (
+      await ethers.getContractFactory("PopLocker")
+    ).deploy(token.pop.address, token.pop.address)
+  ).deployed();
 
-  const crvUSDN = (await ethers.getContractAt(
-    "ERC20",
-    CRV_USDN_TOKEN_ADDRESS
-  )) as ERC20;
+  const rewardsEscrow = await (
+    await (
+      await ethers.getContractFactory("RewardsEscrow")
+    ).deploy(token.pop.address)
+  ).deployed();
 
-  const crvUST = (await ethers.getContractAt(
-    "ERC20",
-    CRV_UST_TOKEN_ADDRESS
-  )) as ERC20;
+  const staking = await (
+    await (
+      await ethers.getContractFactory("Staking")
+    ).deploy(token.pop.address, token.setToken.address, rewardsEscrow.address)
+  ).deployed();
 
   const threePool = (await ethers.getContractAt(
-    CurveMetapoolAbi,
-    THREEPOOL_ADDRESS
+    FactoryMetapoolAbi,
+    THREE_POOL_ADDRESS
   )) as CurveMetapool;
 
-  //Deploy Curve Metapool
-  const dusdMetapool = (await ethers.getContractAt(
-    CurveMetapoolAbi,
-    DUSD_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const fraxMetapool = (await ethers.getContractAt(
-    CurveMetapoolAbi,
+  const fraxMetapoolContract = (await ethers.getContractAt(
+    FactoryMetapoolAbi,
     FRAX_METAPOOL_ADDRESS
   )) as CurveMetapool;
 
-  const usdnMetapool = (await ethers.getContractAt(
-    CurveMetapoolAbi,
-    USDN_METAPOOL_ADDRESS
+  const raiMetapoolContract = (await ethers.getContractAt(
+    FactoryMetapoolAbi,
+    RAI_METAPOOL_ADDRESS
   )) as CurveMetapool;
 
-  const ustMetapool = (await ethers.getContractAt(
-    CurveMetapoolAbi,
-    UST_METAPOOL_ADDRESS
+  const ousdMetapoolContract = (await ethers.getContractAt(
+    FactoryMetapoolAbi,
+    OUSD_METAPOOL_ADDRESS
   )) as CurveMetapool;
 
-  //Deploy Yearn Vaults
-  const yDUSD = (await ethers.getContractAt(
+  const yFraxVault = (await ethers.getContractAt(
     "MockYearnV2Vault",
-    YDUSD_TOKEN_ADDRESS
+    Y_CRV_FRAX_ADDRESS
   )) as MockYearnV2Vault;
 
-  const yFRAX = (await ethers.getContractAt(
+  const yRaiVault = (await ethers.getContractAt(
     "MockYearnV2Vault",
-    YFRAX_TOKEN_ADDRESS
+    Y_CRV_RAI_ADDRESS
   )) as MockYearnV2Vault;
 
-  const yUSDN = (await ethers.getContractAt(
+  const yOusdVault = (await ethers.getContractAt(
     "MockYearnV2Vault",
-    YUSDN_TOKEN_ADDRESS
+    Y_CRV_OUSD_ADDRESS
   )) as MockYearnV2Vault;
 
-  const yUST = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    YUST_TOKEN_ADDRESS
-  )) as MockYearnV2Vault;
-
-  componentMap[YDUSD_TOKEN_ADDRESS].metaPool = dusdMetapool;
-  componentMap[YDUSD_TOKEN_ADDRESS].yPool = yDUSD;
-  componentMap[YFRAX_TOKEN_ADDRESS].metaPool = fraxMetapool;
-  componentMap[YFRAX_TOKEN_ADDRESS].yPool = yFRAX;
-  componentMap[YUSDN_TOKEN_ADDRESS].metaPool = usdnMetapool;
-  componentMap[YUSDN_TOKEN_ADDRESS].yPool = yUSDN;
-  componentMap[YUST_TOKEN_ADDRESS].metaPool = ustMetapool;
-  componentMap[YUST_TOKEN_ADDRESS].yPool = yUST;
-
-  //Deploy Set Procotol
-  const hysi = (await ethers.getContractAt(
-    SetTokenAbi.abi,
-    HYSI_TOKEN_ADDRESS
-  )) as unknown as SetToken;
-
-  const basicIssuanceModule = (await ethers.getContractAt(
+  const basicIssuanceModule = await ethers.getContractAt(
     BasicIssuanceModuleAbi.abi,
     SET_BASIC_ISSUANCE_MODULE_ADDRESS
-  )) as unknown as BasicIssuanceModule;
-
-  //Deploy HysiBatchInteraction
-  const HysiBatchInteraction = await ethers.getContractFactory(
-    "HysiBatchInteraction"
   );
-  const hysiBatchInteraction = await (
-    await HysiBatchInteraction.deploy(
-      THREE_CRV_TOKEN_ADDRESS,
-      HYSI_TOKEN_ADDRESS,
-      SET_BASIC_ISSUANCE_MODULE_ADDRESS,
-      [
-        YDUSD_TOKEN_ADDRESS,
-        YFRAX_TOKEN_ADDRESS,
-        YUSDN_TOKEN_ADDRESS,
-        YUST_TOKEN_ADDRESS,
-      ],
-      [
-        {
-          curveMetaPool: DUSD_METAPOOL_ADDRESS,
-          crvLPToken: CRV_DUSD_TOKEN_ADDRESS,
-        },
-        {
-          curveMetaPool: FRAX_METAPOOL_ADDRESS,
-          crvLPToken: CRV_FRAX_TOKEN_ADDRESS,
-        },
-        {
-          curveMetaPool: USDN_METAPOOL_ADDRESS,
-          crvLPToken: CRV_USDN_TOKEN_ADDRESS,
-        },
-        {
-          curveMetaPool: UST_METAPOOL_ADDRESS,
-          crvLPToken: CRV_UST_TOKEN_ADDRESS,
-        },
-      ],
+
+  await basicIssuanceModule
+    .connect(owner)
+    .initialize(token.setToken.address, "0x0000000000000000000000000000000000000000");
+
+  const YTOKEN_ADDRESSES = [token.yFrax.address, token.yRai.address, token.yOusd.address];
+  const CRV_DEPENDENCIES = [
+    {
+      curveMetaPool: fraxMetapoolContract.address,
+      crvLPToken: token.crvFrax.address,
+    },
+    {
+      curveMetaPool: raiMetapoolContract.address,
+      crvLPToken: token.crvRai.address,
+    },
+    {
+      curveMetaPool: ousdMetapoolContract.address,
+      crvLPToken: token.crvOusd.address,
+    },
+  ];
+
+  const ButterBatchProcessing = await ethers.getContractFactory(
+    "ButterBatchProcessing"
+  );
+  const butterBatch = await (
+    await ButterBatchProcessing.deploy(
+      contractRegistry.address,
+      staking.address,
+      token.setToken.address,
+      token.threeCrv.address,
+      threePool.address,
+      basicIssuanceModule.address,
+      YTOKEN_ADDRESSES,
+      CRV_DEPENDENCIES,
       0,
-      parseEther("1"),
-      parseEther("1"),
-      owner.address,
-      mockPop.address
+      parseEther("0"),
+      parseEther("0")
     )
   ).deployed();
 
+
+  await butterBatch.setApprovals();
+
+  await aclRegistry.grantRole(ethers.utils.id("DAO"), owner.address);
+  await aclRegistry.grantRole(ethers.utils.id("Keeper"), owner.address);
+
+  await butterBatch.connect(owner).setMintSlippage(1000);
+  await butterBatch.connect(owner).setRedeemSlippage(1000)
+
+  await contractRegistry
+    .connect(owner)
+    .addContract(
+      ethers.utils.id("POP"),
+      token.pop.address,
+      ethers.utils.id("1")
+    );
+  await contractRegistry
+    .connect(owner)
+    .addContract(
+      ethers.utils.id("KeeperIncentive"),
+      keeperIncentive.address,
+      ethers.utils.id("1")
+    );
+  await contractRegistry
+    .connect(owner)
+    .addContract(
+      ethers.utils.id("PopLocker"),
+      popStaking.address,
+      ethers.utils.id("1")
+    );
+
+  await keeperIncentive
+    .connect(owner)
+    .createIncentive(
+      utils.formatBytes32String("ButterBatchProcessing"),
+      0,
+      true,
+      false
+    );
+
+  await keeperIncentive
+    .connect(owner)
+    .createIncentive(
+      utils.formatBytes32String("ButterBatchProcessing"),
+      0,
+      true,
+      false
+    );
+
+  await keeperIncentive
+    .connect(owner)
+    .addControllerContract(
+      utils.formatBytes32String("ButterBatchProcessing"),
+      butterBatch.address
+    );
+
   return {
-    mockPop,
-    threeCrv,
-    crvDUSD,
-    crvFRAX,
-    crvUSDN,
-    crvUST,
-    threePool,
-    dusdMetapool,
-    fraxMetapool,
-    usdnMetapool,
-    ustMetapool,
-    yDUSD,
-    yFRAX,
-    yUSDN,
-    yUST,
-    hysi,
-    setToken: hysi,
-    basicIssuanceModule,
-    hysiBatchInteraction,
+    token,
     faucet,
+    basicIssuanceModule,
+    threePool,
+    metapools:{
+      frax:fraxMetapoolContract,
+      rai:raiMetapoolContract,
+      ousd:ousdMetapoolContract
+    },
+    vaults:{
+      frax:yFraxVault,
+      rai:yRaiVault,
+      ousd:yOusdVault
+    },
+    butterBatch,
   };
 }

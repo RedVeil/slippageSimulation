@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0
+// Docgen-SOLC: 0.8.0
 
-pragma solidity >=0.6.0 <0.8.0;
+pragma solidity ^0.8.0;
 
 import "./MockERC20.sol";
 
@@ -41,10 +42,7 @@ contract MockCurveThreepool {
     return virtualPrice;
   }
 
-  function add_liquidity(uint256[3] calldata amounts, uint256 min_mint_amounts)
-    external
-    returns (uint256)
-  {
+  function add_liquidity(uint256[3] calldata amounts, uint256 min_mint_amounts) external returns (uint256) {
     require(amounts[0] > 0, "dai must be larger 0");
     require(min_mint_amounts == 0, "min_mint_amounts must be 0");
     uint256 lpTokens;
@@ -62,12 +60,13 @@ contract MockCurveThreepool {
     int128 i,
     uint256 min_amount
   ) external {
+    min_amount;
     lpToken.transferFrom(msg.sender, address(this), _token_amount);
 
     uint256 slippage = (_token_amount * withdrawalSlippageBps) / 10000;
     uint256 transferOut = _token_amount - slippage;
 
-    uint256 idx = uint256(i);
+    uint128 idx = uint128(i);
     tokens[idx].approve(address(this), transferOut);
     tokens[idx].mint(address(this), transferOut);
     tokens[idx].transferFrom(address(this), msg.sender, transferOut);

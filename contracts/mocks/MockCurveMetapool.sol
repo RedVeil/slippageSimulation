@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0
+// Docgen-SOLC: 0.8.0
 
-pragma solidity >=0.6.0 <0.8.0;
+pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./MockERC20.sol";
 
 contract MockCurveMetapool {
@@ -46,11 +46,7 @@ contract MockCurveMetapool {
   }
 
   function base_coins() external view returns (address[3] memory) {
-    address[3] memory coinAddresses = [
-      address(dai),
-      address(usdc),
-      address(usdt)
-    ];
+    address[3] memory coinAddresses = [address(dai), address(usdc), address(usdt)];
     return coinAddresses;
   }
 
@@ -58,19 +54,14 @@ contract MockCurveMetapool {
     return virtualPrice;
   }
 
-  function calc_withdraw_one_coin(uint256 _token_amount, int128 i)
-    external
-    view
-    returns (uint256)
-  {
+  function calc_withdraw_one_coin(uint256 _token_amount, int128 i) external pure returns (uint256) {
+    i;
     return _token_amount;
   }
 
-  function add_liquidity(uint256[2] calldata amounts, uint256 min_mint_amounts)
-    external
-    returns (uint256)
-  {
+  function add_liquidity(uint256[2] calldata amounts, uint256 min_mint_amounts) external returns (uint256) {
     uint256 lpTokens;
+    min_mint_amounts;
     for (uint8 i = 0; i < tokens.length; i++) {
       tokens[i].transferFrom(msg.sender, address(this), amounts[i]);
       lpToken.mint(msg.sender, amounts[i]);
@@ -85,11 +76,10 @@ contract MockCurveMetapool {
     uint256 _min_amount
   ) external returns (uint256) {
     lpToken.transferFrom(msg.sender, address(this), _token_amount);
-
+    _min_amount;
     uint256 slippage = (_token_amount * withdrawalSlippageBps) / 10000;
     uint256 transferOut = _token_amount - slippage;
-
-    uint256 idx = uint256(i);
+    uint128 idx = uint128(i);
     tokens[idx].approve(address(this), transferOut);
     tokens[idx].mint(address(this), transferOut);
     tokens[idx].transferFrom(address(this), msg.sender, transferOut);

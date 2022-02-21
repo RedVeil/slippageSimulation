@@ -1,24 +1,27 @@
-pragma solidity >=0.6.0 <0.8.0;
+// SPDX-License-Identifier: GPL-3.0
+// Docgen-SOLC: 0.8.0
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
+pragma solidity ^0.8.0;
 
-import "../KeeperIncentive.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract KeeperIncentiveHelper is KeeperIncentive {
+import "../core/utils/KeeperIncentive.sol";
+
+contract KeeperIncentiveHelper {
   using SafeERC20 for IERC20;
-  using SafeMath for uint256;
+
+  KeeperIncentive public keeperIncentive;
+  bytes32 public immutable contractName = "KeeperIncentiveHelper";
 
   event FunctionCalled(address account);
 
-  constructor(IERC20 pop_) public KeeperIncentive(msg.sender, pop_) {}
-
-  function defaultIncentivisedFunction() public keeperIncentive(0) {
-    emit FunctionCalled(msg.sender);
+  constructor(KeeperIncentive keeperIncentive_) {
+    keeperIncentive = keeperIncentive_;
   }
 
-  function incentivisedFunction() public keeperIncentive(1) {
+  function incentivisedFunction() public {
+    keeperIncentive.handleKeeperIncentive(contractName, 0, msg.sender);
     emit FunctionCalled(msg.sender);
   }
 }

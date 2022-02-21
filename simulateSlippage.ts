@@ -5,6 +5,7 @@ import deployContracts, { Contracts } from "./utils/deployContracts";
 import { CurveMetapool, MockYearnV2Vault } from "./typechain";
 import { BigNumber } from "ethers";
 import { parseEther } from "@ethersproject/units";
+import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 require("dotenv").config({ path: ".env" });
 
 const fs = require("fs");
@@ -16,7 +17,7 @@ async function getHysiBalanceInUSD(
 ): Promise<BigNumber> {
   const components =
     await contracts.basicIssuanceModule.getRequiredComponentUnitsForIssue(
-      contracts.setToken.address,
+      contracts.token.setToken.address,
       hysiBalance
     );
   const componentAddresses = components[0];
@@ -47,91 +48,85 @@ async function getHysiBalanceInUSD(
   return componentValuesInUSD as unknown as BigNumber;
 }
 
-export default async function simulateSlippage(
-  ethers,
-  network: Network
-): Promise<void> {
-  const MAX_SLIPPAGE = 0.0005;
-  const INPUT_AMOUNT = parseEther("100000000");
-  let mintBlockNumber = 12786723;
+export default async function simulateSlippage(hre): Promise<void> {
+  const ethers = hre.ethers;
+  const network = hre.network;
+  const MAX_SLIPPAGE = 0.002;
+  const INPUT_AMOUNT = parseEther("1000000");
+  let mintBlockNumber = 14178568;
 
   const RESET_BLOCK_NUMBER = 12780983; //mintBlockNumber - 10
-  const END_BLOCK_NUMBER = 13322503;
+  const END_BLOCK_NUMBER = 14185568;
+
+  await network.provider.request({
+    method: "hardhat_reset",
+    params: [
+      {
+        forking: {
+          jsonRpcUrl: process.env.FORKING_RPC_URL,
+          blockNumber: mintBlockNumber,
+        },
+      },
+    ],
+  });
+  const [signer]: SignerWithAddress[] = await ethers.getSigners();
+
+  const contracts = await deployContracts(ethers, network, signer);
+  console.log("reset")
 
   while (mintBlockNumber < END_BLOCK_NUMBER) {
-    await network.provider.request({
-      method: "hardhat_reset",
-      params: [
-        {
-          forking: {
-            jsonRpcUrl: process.env.FORKING_RPC_URL,
-            blockNumber: mintBlockNumber,
-          },
-        },
-      ],
-    });
-    const [signer] = await ethers.getSigners();
+    await network.provider.send("hardhat_setBalance", [
+      contracts.faucet.address,
+      "0x152d02c7e14af6800000", // 100k ETH
+    ]);
+    await contracts.faucet.sendThreeCrv(50000, signer.address);
 
-    const contracts = await deployContracts(ethers, network, signer);
-    const componentMap: ComponentMap = {
-      [contracts.yDUSD.address]: {
-        name: "yDUSD",
-        metaPool: contracts.dusdMetapool,
-        yPool: contracts.yDUSD,
-      },
-      [contracts.yFRAX.address]: {
-        name: "yFRAX",
-        metaPool: contracts.fraxMetapool,
-        yPool: contracts.yFRAX,
-      },
-      [contracts.yUSDN.address]: {
-        name: "yUSDN",
-        metaPool: contracts.usdnMetapool,
-        yPool: contracts.yUSDN,
-      },
-      [contracts.yUST.address]: {
-        name: "yUST",
-        metaPool: contracts.ustMetapool,
-        yPool: contracts.yUST,
-      },
-    };
-    await contracts.faucet.sendThreeCrv(500000, signer.address);
-
-    await contracts.threeCrv
+    await contracts.token.threeCrv
       .connect(signer)
-      .approve(contracts.hysiBatchInteraction.address, 0);
-    await contracts.hysi
+      .approve(contracts.butterBatch.address, 0);
+    await contracts.token.setToken
       .connect(signer)
-      .approve(contracts.hysiBatchInteraction.address, 0);
-    await contracts.threeCrv
+      .approve(contracts.butterBatch.address, 0);
+    await contracts.token.threeCrv
       .connect(signer)
-      .approve(
-        contracts.hysiBatchInteraction.address,
-        parseEther("1000000000")
-      );
-    await contracts.hysi
+      .approve(contracts.butterBatch.address, parseEther("1000000000"));
+    await contracts.token.setToken
       .connect(signer)
-      .approve(
-        contracts.hysiBatchInteraction.address,
-        parseEther("1000000000")
-      );
+      .approve(contracts.butterBatch.address, parseEther("1000000000"));
 
     const threeCrvPrice = await contracts.threePool.get_virtual_price();
     const inputAmountInUSD = INPUT_AMOUNT.mul(threeCrvPrice).div(
       parseEther("1")
     );
-    await contracts.hysiBatchInteraction
+    await contracts.butterBatch
       .connect(signer)
       .depositForMint(INPUT_AMOUNT, signer.address);
-    const mintBatchId =
-      await contracts.hysiBatchInteraction.currentMintBatchId();
-    await contracts.hysiBatchInteraction.connect(signer).batchMint(0);
+    const mintBatchId = await contracts.butterBatch.currentMintBatchId();
+    await contracts.butterBatch.connect(signer).batchMint();
     const mintingBlock = await ethers.provider.getBlock("latest");
     mintBlockNumber = mintingBlock.number;
 
     const hysiBalance = await (
-      await contracts.hysiBatchInteraction.batches(mintBatchId)
+      await contracts.butterBatch.batches(mintBatchId)
     ).claimableTokenBalance;
+
+    const componentMap: ComponentMap = {
+      [contracts.token.yFrax.address.toLowerCase()]: {
+        name: "yFRAX",
+        metaPool: contracts.metapools.frax,
+        yPool: contracts.vaults.frax,
+      },
+      [contracts.token.yRai.address.toLowerCase()]: {
+        name: "yRAI",
+        metaPool: contracts.metapools.rai,
+        yPool: contracts.vaults.rai,
+      },
+      [contracts.token.yOusd.address.toLowerCase()]: {
+        name: "yOUSD",
+        metaPool: contracts.metapools.ousd,
+        yPool: contracts.vaults.ousd,
+      },
+    };
 
     const hysiAmountInUSD = await getHysiBalanceInUSD(
       hysiBalance,
@@ -160,7 +155,11 @@ export default async function simulateSlippage(
     console.log(
       "-----------------------------------------------------------------------------"
     );
-    mintBlockNumber = mintBlockNumber + 30;
+    Array(35)
+      .fill(0)
+      .forEach(async (x) => await ethers.provider.send("evm_mine", []));
+    //mintBlockNumber = mintBlockNumber + 30;
+
     // await contracts.hysiBatchInteraction
     //   .connect(signer)
     //   .moveUnclaimedDepositsIntoCurrentBatch(
