@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 // Docgen-SOLC: 0.8.0
 
-pragma solidity >0.6.0;
+pragma solidity ^0.8.0;
 
 /**
  * @dev External interface of ContractRegistry.

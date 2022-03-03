@@ -1,76 +1,61 @@
 import BasicIssuanceModuleAbi from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/modules/BasicIssuanceModule.sol/BasicIssuanceModule.json";
 import SetToken from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/SetToken.sol/SetToken.json";
 import SetTokenCreator from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/SetTokenCreator.sol/SetTokenCreator.json";
-import FactoryMetapoolAbi from "../Curve/FactoryMetapoolAbi.json";
 import {
-  ButterBatchProcessing,
+  FFButterBatchProcessing,
   ERC20,
-  CurveMetapool,
   BasicIssuanceModule,
-  Faucet,
-  MockYearnV2Vault,
 } from "../typechain";
 import { utils } from "ethers";
 import { parseEther } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 interface Token {
-  yFrax: ERC20;
-  yRai: ERC20;
-  yOusd: ERC20;
-  crvFrax: ERC20;
-  crvRai: ERC20;
-  crvOusd: ERC20;
-  threeCrv: ERC20;
+  yEUR: ERC20;
+  yGBP: ERC20;
+  yAUD: ERC20;
+  yJPY:ERC20;
+  sUSD:ERC20;
   pop: ERC20;
   setToken: ERC20;
 }
 
-interface Metapools {
-  frax: CurveMetapool;
-  rai: CurveMetapool;
-  ousd: CurveMetapool;
-}
-
-interface Vaults {
-  frax: MockYearnV2Vault;
-  rai: MockYearnV2Vault;
-  ousd: MockYearnV2Vault;
-}
 export interface Contracts {
   token: Token;
-  faucet: Faucet;
   basicIssuanceModule: BasicIssuanceModule;
-  threePool: CurveMetapool;
-  metapools: Metapools;
-  vaults: Vaults;
-  butterBatch: ButterBatchProcessing;
+  butterBatch: FFButterBatchProcessing;
 }
 
-const UNISWAP_ROUTER_ADDRESS = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
-const CURVE_ADDRESS_PROVIDER_ADDRESS =
-  "0x0000000022D53366457F9d5E68Ec105046FC4383";
-const CURVE_FACTORY_METAPOOL_DEPOSIT_ZAP_ADDRESS =
-  "0xA79828DF1850E8a3A3064576f380D90aECDD3359";
+const ADDRESS_ZER0 = "0x0000000000000000000000000000000000000000"
 
 const SET_TOKEN_CREATOR_ADDRESS = "0xeF72D3278dC3Eba6Dc2614965308d1435FFd748a";
 const SET_BASIC_ISSUANCE_MODULE_ADDRESS =
   "0xd8EF3cACe8b4907117a45B0b125c68560532F94D";
 
-const THREE_CRV_ADDRESS = "0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490";
-const THREE_POOL_ADDRESS = "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7";
+const IB_AMM_ADDRESS = "0x8338Aa899fB3168598D871Edc1FE2B4F0Ca6BBEF";
 
-const Y_CRV_FRAX_ADDRESS = "0xB4AdA607B9d6b2c9Ee07A275e9616B84AC560139";
-const Y_CRV_RAI_ADDRESS = "0x2D5D4869381C4Fce34789BC1D38aCCe747E295AE";
-const Y_CRV_OUSD_ADDRESS = "0xF59D66c1d593Fb10e2f8c2a6fD2C958792434B9c";
+const SYNTHETIX_ADDRESS = "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F";
 
-const CRV_FRAX_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
-const CRV_RAI_ADDRESS = "0x6BA5b4e438FA0aAf7C1bD179285aF65d13bD3D90";
-const CRV_OUSD_ADDRESS = "0x87650D7bbfC3A9F10587d7778206671719d9910D";
+const Y_CRV_IB_EUR_ADDRESS = "0x67e019bfbd5a67207755D04467D6A70c0B75bF60";
+const Y_CRV_IB_GBP_ADDRESS = "0x595a68a8c9D5C230001848B69b1947ee2A607164";
+const Y_CRV_IB_AUD_ADDRESS = "0x1b905331F7dE2748F4D6a0678e1521E20347643F";
+const Y_CRV_IB_JPY_ADDRESS = "0x59518884EeBFb03e90a18ADBAAAB770d4666471e";
 
-const FRAX_METAPOOL_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
-const RAI_METAPOOL_ADDRESS = "0x618788357D0EBd8A37e763ADab3bc575D54c2C7d";
-const OUSD_METAPOOL_ADDRESS = "0x87650D7bbfC3A9F10587d7778206671719d9910D";
+const IB_EUR_ADDRESS = "0x96e61422b6a9ba0e068b6c5add4ffabc6a4aae27";
+const IB_GBP_ADDRESS = "0x69681f8fde45345c3870bcd5eaf4a05a60e7d227";
+const IB_AUD_ADDRESS = "0xfafdf0c4c1cb09d430bf88c75d88bb46dae09967";
+const IB_JPY_ADDRESS = "0x5555f75e3d5278082200fb451d1b6ba946d8e13b";
+
+const S_EUR_ADDRESS = "0xd71ecff9342a5ced620049e616c5035f1db98620";
+const S_GBP_ADDRESS = "0x97fe22e7341a0cd8db6f6c021a24dc8f4dad855f";
+const S_AUD_ADDRESS = "0xf48e200eaf9906362bb1442fca31e0835773b8b4";
+const S_JPY_ADDRESS = "0xf6b1c627e95bfc3c1b4c9b825a032ff0fbf3e07d";
+const S_USD_ADDRESS = "0x57Ab1ec28D129707052df4dF418D58a2D46d5f51";
+
+const EUR_METAPOOL_ADDRESS = "0x19b080FE1ffA0553469D20Ca36219F17Fcf03859";
+const GBP_METAPOOL_ADDRESS = "0xD6Ac1CB9019137a896343Da59dDE6d097F710538";
+const AUD_METAPOOL_ADDRESS = "0x3F1B0278A9ee595635B61817630cC19DE792f506";
+const JPY_METAPOOL_ADDRESS = "0x8818a9bb44fbf33502be7c15c500d0c783b73067";
 
 export async function deployToken(
   ethers,
@@ -81,8 +66,8 @@ export async function deployToken(
     SET_TOKEN_CREATOR_ADDRESS
   );
   const setTokenAddress = await setTokenCreator.callStatic.create(
-    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_OUSD_ADDRESS],
-    [parseEther("33"), parseEther("33"), parseEther("33")],
+    [Y_CRV_IB_EUR_ADDRESS, Y_CRV_IB_GBP_ADDRESS, Y_CRV_IB_AUD_ADDRESS,Y_CRV_IB_JPY_ADDRESS],
+    [parseEther("25"), parseEther("25"), parseEther("25"), parseEther("25")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
     "Butter2",
@@ -90,8 +75,8 @@ export async function deployToken(
   );
 
   await setTokenCreator.create(
-    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_OUSD_ADDRESS],
-    [parseEther("33"), parseEther("33"), parseEther("33")],
+    [Y_CRV_IB_EUR_ADDRESS, Y_CRV_IB_GBP_ADDRESS, Y_CRV_IB_AUD_ADDRESS,Y_CRV_IB_JPY_ADDRESS],
+    [parseEther("25"), parseEther("25"), parseEther("25"), parseEther("25")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
     "Butter2",
@@ -103,35 +88,25 @@ export async function deployToken(
     setTokenAddress
   )) as ERC20;
 
-  const yFrax = (await ethers.getContractAt(
+  const yEUR = (await ethers.getContractAt(
     "ERC20",
-    Y_CRV_FRAX_ADDRESS
+    Y_CRV_IB_EUR_ADDRESS
   )) as ERC20;
-  const yRai = (await ethers.getContractAt(
+  const yGBP = (await ethers.getContractAt(
     "ERC20",
-    Y_CRV_RAI_ADDRESS
+    Y_CRV_IB_GBP_ADDRESS
   )) as ERC20;
-  const yOusd = (await ethers.getContractAt(
+  const yAUD = (await ethers.getContractAt(
     "ERC20",
-    Y_CRV_OUSD_ADDRESS
+    Y_CRV_IB_AUD_ADDRESS
   )) as ERC20;
-
-  const crvFrax = (await ethers.getContractAt(
+  const yJPY = (await ethers.getContractAt(
     "ERC20",
-    CRV_FRAX_ADDRESS
+    Y_CRV_IB_JPY_ADDRESS
   )) as ERC20;
-  const crvRai = (await ethers.getContractAt(
+  const sUSD = (await ethers.getContractAt(
     "ERC20",
-    CRV_RAI_ADDRESS
-  )) as ERC20;
-  const crvOusd = (await ethers.getContractAt(
-    "ERC20",
-    CRV_OUSD_ADDRESS
-  )) as ERC20;
-
-  const threeCrv = (await ethers.getContractAt(
-    "ERC20",
-    THREE_CRV_ADDRESS
+    S_USD_ADDRESS
   )) as ERC20;
 
   const MockERC20 = await ethers.getContractFactory("MockERC20");
@@ -139,13 +114,11 @@ export async function deployToken(
   const pop = await (await MockERC20.deploy("POP", "POP", 18)).deployed();
 
   return {
-    yFrax,
-    yRai,
-    yOusd,
-    crvFrax,
-    crvRai,
-    crvOusd,
-    threeCrv,
+    yEUR,
+    yGBP,
+    yAUD,
+    yJPY,
+    sUSD,
     pop,
     setToken,
   };
@@ -158,84 +131,6 @@ export default async function deployContracts(
 ): Promise<Contracts> {
   const token = await deployToken(ethers, owner);
 
-  const Faucet = await ethers.getContractFactory("Faucet");
-  const faucet = await (
-    await Faucet.deploy(
-      UNISWAP_ROUTER_ADDRESS,
-      CURVE_ADDRESS_PROVIDER_ADDRESS,
-      CURVE_FACTORY_METAPOOL_DEPOSIT_ZAP_ADDRESS
-    )
-  ).deployed();
-
-  const aclRegistry = await (
-    await (await ethers.getContractFactory("ACLRegistry")).deploy()
-  ).deployed();
-
-  const contractRegistry = await (
-    await (
-      await ethers.getContractFactory("ContractRegistry")
-    ).deploy(aclRegistry.address)
-  ).deployed();
-
-  const keeperIncentive = await (
-    await (
-      await ethers.getContractFactory("KeeperIncentive")
-    ).deploy(contractRegistry.address, 0, 0)
-  ).deployed();
-
-  const popStaking = await (
-    await (
-      await ethers.getContractFactory("PopLocker")
-    ).deploy(token.pop.address, token.pop.address)
-  ).deployed();
-
-  const rewardsEscrow = await (
-    await (
-      await ethers.getContractFactory("RewardsEscrow")
-    ).deploy(token.pop.address)
-  ).deployed();
-
-  const staking = await (
-    await (
-      await ethers.getContractFactory("Staking")
-    ).deploy(token.pop.address, token.setToken.address, rewardsEscrow.address)
-  ).deployed();
-
-  const threePool = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    THREE_POOL_ADDRESS
-  )) as CurveMetapool;
-
-  const fraxMetapoolContract = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    FRAX_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const raiMetapoolContract = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    RAI_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const ousdMetapoolContract = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    OUSD_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const yFraxVault = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    Y_CRV_FRAX_ADDRESS
-  )) as MockYearnV2Vault;
-
-  const yRaiVault = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    Y_CRV_RAI_ADDRESS
-  )) as MockYearnV2Vault;
-
-  const yOusdVault = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    Y_CRV_OUSD_ADDRESS
-  )) as MockYearnV2Vault;
-
   const basicIssuanceModule = await ethers.getContractAt(
     BasicIssuanceModuleAbi.abi,
     SET_BASIC_ISSUANCE_MODULE_ADDRESS
@@ -243,121 +138,162 @@ export default async function deployContracts(
 
   await basicIssuanceModule
     .connect(owner)
-    .initialize(
-      token.setToken.address,
-      "0x0000000000000000000000000000000000000000"
-    );
+    .initialize(token.setToken.address, ADDRESS_ZER0);
 
-  const YTOKEN_ADDRESSES = [
-    token.yRai.address,
-    token.yFrax.address,
-    token.yOusd.address,
-  ];
-  const CRV_DEPENDENCIES = [
-    {
-      curveMetaPool: raiMetapoolContract.address,
-      crvLPToken: token.crvRai.address,
-    },
-    {
-      curveMetaPool: fraxMetapoolContract.address,
-      crvLPToken: token.crvFrax.address,
-    },
+    const aclRegistry = await (
+      await (await ethers.getContractFactory("ACLRegistry")).deploy()
+    ).deployed();
+  
+    const contractRegistry = await (
+      await (
+        await ethers.getContractFactory("ContractRegistry")
+      ).deploy(aclRegistry.address)
+    ).deployed();
+  
+    const keeperIncentive = await (
+      await (
+        await ethers.getContractFactory("KeeperIncentive")
+      ).deploy(contractRegistry.address, 0, 0)
+    ).deployed();
+  
+    const popStaking = await (
+      await (
+        await ethers.getContractFactory("PopLocker")
+      ).deploy(token.pop.address, token.pop.address)
+    ).deployed();
+  
+    const rewardsEscrow = await (
+      await (
+        await ethers.getContractFactory("RewardsEscrow")
+      ).deploy(token.pop.address)
+    ).deployed();
 
-    {
-      curveMetaPool: ousdMetapoolContract.address,
-      crvLPToken: token.crvOusd.address,
-    },
-  ];
 
-  const ButterBatchProcessing = await ethers.getContractFactory(
-    "ButterBatchProcessing"
-  );
-  const butterBatch = await (
-    await ButterBatchProcessing.deploy(
-      contractRegistry.address,
-      staking.address,
-      token.setToken.address,
-      token.threeCrv.address,
-      threePool.address,
-      basicIssuanceModule.address,
-      YTOKEN_ADDRESSES,
-      CRV_DEPENDENCIES,
-      0,
-      parseEther("0"),
-      parseEther("0")
-    )
-  ).deployed();
+    const staking = await (
+      await (
+        await ethers.getContractFactory("Staking")
+      ).deploy(token.pop.address, token.setToken.address, rewardsEscrow.address)
+    ).deployed();
+  
+    const ibAMM = (await ethers.getContractAt(
+      "IibAMM",
+      IB_AMM_ADDRESS
+    ));
+    const synthetix = (await ethers.getContractAt(
+      "ISynthetix",
+      SYNTHETIX_ADDRESS
+    ));
+  
+    const butterBatch = await (
+      await (
+        await ethers.getContractFactory("FFButterBatchProcessing")
+      ).deploy(
+        contractRegistry.address,
+        staking.address,
+        token.setToken.address,
+        { input: S_USD_ADDRESS, output: S_USD_ADDRESS },
+        {
+          ibAMM: ibAMM.address,
+          synthetix: synthetix.address,
+          setBasicIssuanceModule: SET_BASIC_ISSUANCE_MODULE_ADDRESS,
+        },
+        [
+          Y_CRV_IB_EUR_ADDRESS,
+          Y_CRV_IB_GBP_ADDRESS,
+          Y_CRV_IB_AUD_ADDRESS,
+          Y_CRV_IB_JPY_ADDRESS,
+        ],
+        [
+          {
+            curveMetaPool: EUR_METAPOOL_ADDRESS,
+            ibToken: IB_EUR_ADDRESS,
+            sToken: S_EUR_ADDRESS,
+            sId: ethers.utils.formatBytes32String("sEUR"),
+          },
+          {
+            curveMetaPool: GBP_METAPOOL_ADDRESS,
+            ibToken: IB_GBP_ADDRESS,
+            sToken: S_GBP_ADDRESS,
+            sId: ethers.utils.formatBytes32String("sGBP"),
+          },
+          {
+            curveMetaPool: AUD_METAPOOL_ADDRESS,
+            ibToken: IB_AUD_ADDRESS,
+            sToken: S_AUD_ADDRESS,
+            sId: ethers.utils.formatBytes32String("sAUD"),
+          },
+          {
+            curveMetaPool: JPY_METAPOOL_ADDRESS,
+            ibToken: IB_JPY_ADDRESS,
+            sToken: S_JPY_ADDRESS,
+            sId: ethers.utils.formatBytes32String("sJPY"),
+          },
+        ],
+        {
+          batchCooldown: 0,
+          mintThreshold: parseEther("1"),
+          redeemThreshold: parseEther("1"),
+        }
+      )
+    ).deployed();
+  
+    await aclRegistry.grantRole(ethers.utils.id("DAO"), owner.address);
+    await aclRegistry.grantRole(ethers.utils.id("Keeper"), owner.address);
+  
+    await butterBatch.setApprovals();
+  
+    await contractRegistry
+      .connect(owner)
+      .addContract(
+        ethers.utils.id("POP"),
+        token.pop.address,
+        ethers.utils.id("1")
+      );
+    await contractRegistry
+      .connect(owner)
+      .addContract(
+        ethers.utils.id("KeeperIncentive"),
+        keeperIncentive.address,
+        ethers.utils.id("1")
+      );
+    await contractRegistry
+      .connect(owner)
+      .addContract(
+        ethers.utils.id("PopLocker"),
+        popStaking.address,
+        ethers.utils.id("1")
+      );
+  
+    await keeperIncentive
+      .connect(owner)
+      .createIncentive(
+        utils.formatBytes32String("FFButterBatchProcessing"),
+        0,
+        true,
+        false
+      );
+  
+    await keeperIncentive
+      .connect(owner)
+      .createIncentive(
+        utils.formatBytes32String("FFButterBatchProcessing"),
+        0,
+        true,
+        false
+      );
+  
+    await keeperIncentive
+      .connect(owner)
+      .addControllerContract(
+        utils.formatBytes32String("FFButterBatchProcessing"),
+        butterBatch.address
+      );
 
-  await butterBatch.setApprovals();
-
-  await aclRegistry.grantRole(ethers.utils.id("DAO"), owner.address);
-  await aclRegistry.grantRole(ethers.utils.id("Keeper"), owner.address);
-
-  await butterBatch.connect(owner).setMintSlippage(1000);
-  await butterBatch.connect(owner).setRedeemSlippage(1000);
-
-  await contractRegistry
-    .connect(owner)
-    .addContract(
-      ethers.utils.id("POP"),
-      token.pop.address,
-      ethers.utils.id("1")
-    );
-  await contractRegistry
-    .connect(owner)
-    .addContract(
-      ethers.utils.id("KeeperIncentive"),
-      keeperIncentive.address,
-      ethers.utils.id("1")
-    );
-  await contractRegistry
-    .connect(owner)
-    .addContract(
-      ethers.utils.id("PopLocker"),
-      popStaking.address,
-      ethers.utils.id("1")
-    );
-
-  await keeperIncentive
-    .connect(owner)
-    .createIncentive(
-      utils.formatBytes32String("ButterBatchProcessing"),
-      0,
-      true,
-      false
-    );
-
-  await keeperIncentive
-    .connect(owner)
-    .createIncentive(
-      utils.formatBytes32String("ButterBatchProcessing"),
-      0,
-      true,
-      false
-    );
-
-  await keeperIncentive
-    .connect(owner)
-    .addControllerContract(
-      utils.formatBytes32String("ButterBatchProcessing"),
-      butterBatch.address
-    );
+    await butterBatch.setSlippage(10000,10000);
 
   return {
     token,
-    faucet,
     basicIssuanceModule,
-    threePool,
-    metapools: {
-      frax: fraxMetapoolContract,
-      rai: raiMetapoolContract,
-      ousd: ousdMetapoolContract,
-    },
-    vaults: {
-      frax: yFraxVault,
-      rai: yRaiVault,
-      ousd: yOusdVault,
-    },
     butterBatch,
   };
 }
