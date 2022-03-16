@@ -17,13 +17,7 @@ interface CurveRegistry {
 interface CurveMetapool is IERC20 {
   function get_virtual_price() external view returns (uint256);
 
-  function add_liquidity(uint256[2] calldata amounts, uint256 min_mint_amounts) external returns (uint256);
-
-  function add_liquidity(
-    uint256[2] calldata _amounts,
-    uint256 _min_mint_amounts,
-    address _receiver
-  ) external returns (uint256);
+  function add_liquidity(uint256[2] memory _amounts, uint256 _min_mint_amounts) external returns(uint256);
 
   function remove_liquidity_one_coin(
     uint256 amount,
@@ -34,22 +28,6 @@ interface CurveMetapool is IERC20 {
   function calc_withdraw_one_coin(uint256 _token_amount, int128 i) external view returns (uint256);
 
   function calc_token_amount(uint256[2] calldata _amounts, bool _is_deposit) external view returns (uint256);
-
-  //Some pools use exchange (sUsd,3crv)...
-  function exchange(
-    int128 i,
-    int128 j,
-    uint256 dx,
-    uint256 min_dy
-  ) external;
-
-  //...And some others use exchange_underlying (mim,3crv)
-  function exchange_underlying(
-    int128 i,
-    int128 j,
-    uint256 dx,
-    uint256 min_dy
-  ) external returns (uint256);
 }
 
 interface CurveDepositZap {

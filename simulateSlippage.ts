@@ -2,19 +2,19 @@ import { bigNumberToNumber } from "./utils/formatBigNumber";
 import { Network } from "hardhat/types";
 import deployContracts, { Contracts } from "./utils/deployContracts";
 import { CurveMetapool, MockYearnV2Vault } from "./typechain";
-import { BigNumber } from "ethers";
+import { BigNumber, constants } from "ethers";
 import { formatEther, parseEther } from "@ethersproject/units";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import {ERC20} from "./typechain"
+import { ERC20 } from "./typechain";
 import { Signer } from "ethers/lib/ethers";
 
 require("dotenv").config({ path: ".env" });
 
 const fs = require("fs");
 
-const SUSD_WHALE_ADDRESS ="0xC8C2b727d864CC75199f5118F0943d2087fB543b"
+const SUSD_WHALE_ADDRESS = "0xC8C2b727d864CC75199f5118F0943d2087fB543b";
 
-const impersonateSigner = async (address,network,ethers): Promise<Signer> => {
+const impersonateSigner = async (address, network, ethers): Promise<Signer> => {
   await network.provider.request({
     method: "hardhat_impersonateAccount",
     params: [address],
@@ -22,7 +22,7 @@ const impersonateSigner = async (address,network,ethers): Promise<Signer> => {
   return ethers.getSigner(address);
 };
 
-const sendEth = async (to: string, amount: string,ethers) => {
+const sendEth = async (to: string, amount: string, ethers) => {
   const [owner] = await ethers.getSigners();
   return owner.sendTransaction({
     to: to,
@@ -42,12 +42,12 @@ async function sendERC20(
 export default async function simulateSlippage(hre): Promise<void> {
   const ethers = hre.ethers;
   const network = hre.network;
-  const MAX_SLIPPAGE = 0.002;
-  const INPUT_AMOUNT = parseEther("10000");
-  let mintBlockNumber = 14221601;
+  const MAX_SLIPPAGE = 0.02;
+  const INPUT_AMOUNT = parseEther("1000");
+  let mintBlockNumber = 14215001;
 
   const ORGINAL_START_BLOCK_NUMBER = 13976427; // earliest possible block to run the simulation
-  const END_BLOCK_NUMBER = 14244857;
+  const END_BLOCK_NUMBER = 14320258;
 
   await network.provider.request({
     method: "hardhat_reset",
@@ -60,38 +60,39 @@ export default async function simulateSlippage(hre): Promise<void> {
       },
     ],
   });
-  const [signer]: SignerWithAddress[] = await ethers.getSigners();
+  const [signer, test]: SignerWithAddress[] = await ethers.getSigners();
 
   console.log("reset");
 
   while (mintBlockNumber < END_BLOCK_NUMBER) {
     const contracts = await deployContracts(ethers, network, signer);
 
-    const sUSDWhale = await impersonateSigner(SUSD_WHALE_ADDRESS,network,ethers);
-    console.log(formatEther(await contracts.token.sUSD.balanceOf(SUSD_WHALE_ADDRESS)))
-    await sendEth(SUSD_WHALE_ADDRESS, "10",ethers);
+    const sUSDWhale = await impersonateSigner(
+      SUSD_WHALE_ADDRESS,
+      network,
+      ethers
+    );
+    console.log(
+      formatEther(await contracts.token.sUSD.balanceOf(SUSD_WHALE_ADDRESS))
+    );
+    await sendEth(SUSD_WHALE_ADDRESS, "10", ethers);
     await sendERC20(
       contracts.token.sUSD,
       sUSDWhale,
       signer.address,
       parseEther("20000")
     );
-    await contracts.token.sUSD
-      .connect(signer)
-      .approve(
-        contracts.butterBatch.address,
-        parseEther("100000000")
-      );
-    
-    await contracts.token.sUSD
-      .connect(signer)
-      .approve(contracts.butterBatch.address, parseEther("1000000000"));
 
     const inputAmountInUSD = INPUT_AMOUNT;
 
+    await contracts.token.sUSD.approve(
+      contracts.butterBatch.address,
+      constants.MaxUint256
+    );
     await contracts.butterBatch
       .connect(signer)
       .depositForMint(INPUT_AMOUNT, signer.address);
+
     const mintBatchId = await contracts.butterBatch.currentMintBatchId();
     await contracts.butterBatch.connect(signer).batchMint();
     const mintingBlock = await ethers.provider.getBlock("latest");
@@ -101,12 +102,17 @@ export default async function simulateSlippage(hre): Promise<void> {
       await contracts.butterBatch.batches(mintBatchId)
     ).claimableTokenBalance;
 
-    const [tokenAddresses, quantities] = await contracts
-    .basicIssuanceModule
-    .getRequiredComponentUnitsForIssue(contracts.token.setToken.address, 1e18);
+    const [tokenAddresses, quantities] =
+      await contracts.basicIssuanceModule.getRequiredComponentUnitsForIssue(
+        contracts.token.setToken.address,
+        1e18
+      );
 
-    const hysiValue= await contracts.butterBatch.valueOfComponents(tokenAddresses, quantities)
-    const hysiAmountInUSD = hysiValue.mul(hysiBalance)
+    const hysiValue = await contracts.butterBatch.valueOfComponents(
+      tokenAddresses,
+      quantities
+    );
+    const hysiAmountInUSD = hysiValue.mul(hysiBalance);
     const slippage =
       bigNumberToNumber(
         inputAmountInUSD.mul(parseEther("1")).div(hysiAmountInUSD)

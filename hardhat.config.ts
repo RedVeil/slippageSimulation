@@ -11,12 +11,19 @@ import {
 } from "hardhat/builtin-tasks/task-names";
 import { internalTask, subtask, task } from "hardhat/config";
 import simulateSlippage from "./simulateSlippage";
+import simulateSlippageTest from "./simulateSlippageTest"
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 require("dotenv").config({ path: ".env" });
 
 task("simulate:slippage", "simulates hysi batch slippage").setAction(
   async (args, hre:HardhatRuntimeEnvironment) => {
     await simulateSlippage(hre);
+  }
+);
+
+task("simulateTest", "simulates hysi batch slippage").setAction(
+  async (args, hre:HardhatRuntimeEnvironment) => {
+    await simulateSlippageTest(hre);
   }
 );
 

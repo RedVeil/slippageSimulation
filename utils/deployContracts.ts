@@ -5,6 +5,7 @@ import {
   FFButterBatchProcessing,
   ERC20,
   BasicIssuanceModule,
+  ISynthetix
 } from "../typechain";
 import { utils } from "ethers";
 import { parseEther } from "ethers/lib/utils";
@@ -24,6 +25,7 @@ export interface Contracts {
   token: Token;
   basicIssuanceModule: BasicIssuanceModule;
   butterBatch: FFButterBatchProcessing;
+  synthetix:ISynthetix;
 }
 
 const ADDRESS_ZER0 = "0x0000000000000000000000000000000000000000"
@@ -295,5 +297,6 @@ export default async function deployContracts(
     token,
     basicIssuanceModule,
     butterBatch,
+    synthetix
   };
 }

@@ -528,10 +528,20 @@ contract FFButterBatchProcessing {
         poolAllocation
       );
       console.log("got here2");
-      console.log(IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).balanceOf(
+      console.log(
+        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).balanceOf(
           address(this)
-        ));
-
+        )
+      );
+      console.log(
+        address(underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool)
+      );
+      console.log(
+        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).allowance(
+          address(this),
+          address(underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool)
+        )
+      );
       //Pool 3CRV to get crvLPToken
       _sendToCurve(
         IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).balanceOf(
@@ -710,20 +720,17 @@ contract FFButterBatchProcessing {
       .getRequiredComponentUnitsForIssue(setToken, 1e18);
 
     for (uint256 i; i < tokenAddresses.length; i++) {
-      IERC20 ibToken = IERC20(
-        underlyingTokenByYtoken[tokenAddresses[i]].ibToken
-      );
       IERC20 sToken = IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken);
       CurveMetapool curveMetapool = underlyingTokenByYtoken[tokenAddresses[i]]
         .curveMetaPool;
       YearnVault yearnVault = YearnVault(tokenAddresses[i]);
 
-      _maxApprove(ibToken, address(curveMetapool));
+      _maxApprove(sToken, address(curveMetapool));
       _maxApprove(sToken, address(partnerContracts.synthetix));
       _maxApprove(curveMetapool, address(yearnVault));
       _maxApprove(curveMetapool, address(curveMetapool));
     }
-    _maxApprove(externalToken.input, address(partnerContracts.ibAMM));
+    _maxApprove(externalToken.input, address(partnerContracts.synthetix));
     _maxApprove(setToken, address(staking));
   }
 
@@ -883,12 +890,12 @@ contract FFButterBatchProcessing {
     partnerContracts.ibAMM.swap(_ffToken, _amount, 0);
   }
 
-  function _swapToSUSD(bytes32 _sId, uint256 _amount) internal {
-    partnerContracts.synthetix.exchange(_sId, _amount, sUsdId);
+  function _swapFromSUSD(bytes32 _sId, uint256 _amount) internal {
+    partnerContracts.synthetix.exchangeAtomically(sUsdId, _amount, _sId, "");
   }
 
-  function _swapFromSUSD(bytes32 _sId, uint256 _amount) internal {
-    partnerContracts.synthetix.exchange(sUsdId, _amount, _sId);
+  function _swapToSUSD(bytes32 _sId, uint256 _amount) internal {
+    partnerContracts.synthetix.exchangeAtomically(_sId, _amount, sUsdId, "");
   }
 
   /**
