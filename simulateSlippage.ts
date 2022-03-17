@@ -52,11 +52,11 @@ export default async function simulateSlippage(hre): Promise<void> {
   const ethers = hre.ethers;
   const network = hre.network;
   const MAX_SLIPPAGE = 0.002;
-  const INPUT_AMOUNT = parseEther("1000000");
-  let mintBlockNumber = 14221601;
+  const INPUT_AMOUNT = parseEther("100000");
+  let mintBlockNumber = 14361457;
 
   const ORGINAL_START_BLOCK_NUMBER = 13956000; // earliest possible block to run the simulation
-  const END_BLOCK_NUMBER = 14244857;
+  const END_BLOCK_NUMBER = 14399756;
 
   await network.provider.request({
     method: "hardhat_reset",
@@ -111,20 +111,25 @@ export default async function simulateSlippage(hre): Promise<void> {
     ).claimableTokenBalance;
 
     const componentMap: ComponentMap = {
-      [contracts.token.yRai.address.toLowerCase()]: {
-        name: "yRAI",
-        metaPool: contracts.metapools.rai,
-        yPool: contracts.vaults.rai,
-      },
       [contracts.token.yFrax.address.toLowerCase()]: {
         name: "yFRAX",
         metaPool: contracts.metapools.frax,
         yPool: contracts.vaults.frax,
       },
-      [contracts.token.yOusd.address.toLowerCase()]: {
-        name: "yOUSD",
-        metaPool: contracts.metapools.ousd,
-        yPool: contracts.vaults.ousd,
+      [contracts.token.yRai.address.toLowerCase()]: {
+        name: "yRAI",
+        metaPool: contracts.metapools.rai,
+        yPool: contracts.vaults.rai,
+      },
+      [contracts.token.yMusd.address.toLowerCase()]: {
+        name: "yMUSD",
+        metaPool: contracts.metapools.musd,
+        yPool: contracts.vaults.musd,
+      },
+      [contracts.token.yAlusd.address.toLowerCase()]: {
+        name: "yALUSD",
+        metaPool: contracts.metapools.alusd,
+        yPool: contracts.vaults.alusd,
       },
     };
 
@@ -138,7 +143,7 @@ export default async function simulateSlippage(hre): Promise<void> {
         inputAmountInUSD.mul(parseEther("1")).div(hysiAmountInUSD)
       ) - 1;
     fs.appendFileSync(
-      "slippage3.csv",
+      "slippage.csv",
       `\r\n${mintBlockNumber},${
         mintingBlock.timestamp
       },${INPUT_AMOUNT.toString()},${inputAmountInUSD.toString()},${hysiBalance.toString()},${hysiAmountInUSD.toString()},${slippage},${

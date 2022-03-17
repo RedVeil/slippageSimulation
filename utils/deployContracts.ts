@@ -17,10 +17,12 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 interface Token {
   yFrax: ERC20;
   yRai: ERC20;
-  yOusd: ERC20;
+  yMusd: ERC20;
+  yAlusd:ERC20
   crvFrax: ERC20;
   crvRai: ERC20;
-  crvOusd: ERC20;
+  crvMusd: ERC20;
+  crvAlusd:ERC20;
   threeCrv: ERC20;
   pop: ERC20;
   setToken: ERC20;
@@ -29,13 +31,15 @@ interface Token {
 interface Metapools {
   frax: CurveMetapool;
   rai: CurveMetapool;
-  ousd: CurveMetapool;
+  musd: CurveMetapool;
+  alusd:CurveMetapool;
 }
 
 interface Vaults {
   frax: MockYearnV2Vault;
   rai: MockYearnV2Vault;
-  ousd: MockYearnV2Vault;
+  musd: MockYearnV2Vault;
+  alusd:MockYearnV2Vault;
 }
 export interface Contracts {
   token: Token;
@@ -62,16 +66,20 @@ const THREE_POOL_ADDRESS = "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7";
 
 const Y_CRV_FRAX_ADDRESS = "0xB4AdA607B9d6b2c9Ee07A275e9616B84AC560139";
 const Y_CRV_RAI_ADDRESS = "0x2D5D4869381C4Fce34789BC1D38aCCe747E295AE";
-const Y_CRV_OUSD_ADDRESS = "0xF59D66c1d593Fb10e2f8c2a6fD2C958792434B9c";
+const Y_CRV_MUSD_ADDRESS = "0x8cc94ccd0f3841a468184aCA3Cc478D2148E1757";
+const Y_CRV_ALUSD_ADDRESS = "0xA74d4B67b3368E83797a35382AFB776bAAE4F5C8";
 
 const CRV_FRAX_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
 const CRV_RAI_ADDRESS = "0x6BA5b4e438FA0aAf7C1bD179285aF65d13bD3D90";
-const CRV_OUSD_ADDRESS = "0x87650D7bbfC3A9F10587d7778206671719d9910D";
+const CRV_MUSD_ADDRESS = "0x1AEf73d49Dedc4b1778d0706583995958Dc862e6";
+const CRV_ALUSD_ADDRESS = "0x43b4FdFD4Ff969587185cDB6f0BD875c5Fc83f8c";
+
 
 const FRAX_METAPOOL_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
 const RAI_METAPOOL_ADDRESS = "0x618788357D0EBd8A37e763ADab3bc575D54c2C7d";
-const OUSD_METAPOOL_ADDRESS = "0x87650D7bbfC3A9F10587d7778206671719d9910D";
-
+const MUSD_METAPOOL_ADDRESS = "0x8474DdbE98F5aA3179B3B3F5942D724aFcdec9f6";
+const ALUSD_METAPOOL_ADDRESS = "0x43b4FdFD4Ff969587185cDB6f0BD875c5Fc83f8c";
+ 
 export async function deployToken(
   ethers,
   owner: SignerWithAddress
@@ -81,8 +89,8 @@ export async function deployToken(
     SET_TOKEN_CREATOR_ADDRESS
   );
   const setTokenAddress = await setTokenCreator.callStatic.create(
-    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_OUSD_ADDRESS],
-    [parseEther("33"), parseEther("33"), parseEther("33")],
+    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_MUSD_ADDRESS,Y_CRV_ALUSD_ADDRESS],
+    [parseEther("25"), parseEther("25"), parseEther("25"), parseEther("25")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
     "Butter2",
@@ -90,8 +98,8 @@ export async function deployToken(
   );
 
   await setTokenCreator.create(
-    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_OUSD_ADDRESS],
-    [parseEther("33"), parseEther("33"), parseEther("33")],
+    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_MUSD_ADDRESS, Y_CRV_ALUSD_ADDRESS],
+    [parseEther("25"), parseEther("25"), parseEther("25"), parseEther("25")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
     "Butter2",
@@ -111,10 +119,15 @@ export async function deployToken(
     "ERC20",
     Y_CRV_RAI_ADDRESS
   )) as ERC20;
-  const yOusd = (await ethers.getContractAt(
+  const yMusd = (await ethers.getContractAt(
     "ERC20",
-    Y_CRV_OUSD_ADDRESS
+    Y_CRV_MUSD_ADDRESS
   )) as ERC20;
+  const yAlusd = (await ethers.getContractAt(
+    "ERC20",
+    Y_CRV_ALUSD_ADDRESS
+  )) as ERC20;
+
 
   const crvFrax = (await ethers.getContractAt(
     "ERC20",
@@ -124,9 +137,13 @@ export async function deployToken(
     "ERC20",
     CRV_RAI_ADDRESS
   )) as ERC20;
-  const crvOusd = (await ethers.getContractAt(
+  const crvMusd = (await ethers.getContractAt(
     "ERC20",
-    CRV_OUSD_ADDRESS
+    CRV_MUSD_ADDRESS
+  )) as ERC20;
+  const crvAlusd = (await ethers.getContractAt(
+    "ERC20",
+    CRV_ALUSD_ADDRESS
   )) as ERC20;
 
   const threeCrv = (await ethers.getContractAt(
@@ -141,10 +158,12 @@ export async function deployToken(
   return {
     yFrax,
     yRai,
-    yOusd,
+    yMusd,
+    yAlusd,
     crvFrax,
     crvRai,
-    crvOusd,
+    crvMusd,
+    crvAlusd,
     threeCrv,
     pop,
     setToken,
@@ -216,9 +235,14 @@ export default async function deployContracts(
     RAI_METAPOOL_ADDRESS
   )) as CurveMetapool;
 
-  const ousdMetapoolContract = (await ethers.getContractAt(
+  const musdMetapoolContract = (await ethers.getContractAt(
     FactoryMetapoolAbi,
-    OUSD_METAPOOL_ADDRESS
+    MUSD_METAPOOL_ADDRESS
+  )) as CurveMetapool;
+
+  const alusdMetapoolContract = (await ethers.getContractAt(
+    FactoryMetapoolAbi,
+    ALUSD_METAPOOL_ADDRESS
   )) as CurveMetapool;
 
   const yFraxVault = (await ethers.getContractAt(
@@ -231,9 +255,14 @@ export default async function deployContracts(
     Y_CRV_RAI_ADDRESS
   )) as MockYearnV2Vault;
 
-  const yOusdVault = (await ethers.getContractAt(
+  const yMusdVault = (await ethers.getContractAt(
     "MockYearnV2Vault",
-    Y_CRV_OUSD_ADDRESS
+    Y_CRV_MUSD_ADDRESS
+  )) as MockYearnV2Vault;
+
+  const yAlusdVault = (await ethers.getContractAt(
+    "MockYearnV2Vault",
+    Y_CRV_ALUSD_ADDRESS
   )) as MockYearnV2Vault;
 
   const basicIssuanceModule = await ethers.getContractAt(
@@ -251,7 +280,8 @@ export default async function deployContracts(
   const YTOKEN_ADDRESSES = [
     token.yRai.address,
     token.yFrax.address,
-    token.yOusd.address,
+    token.yMusd.address,
+    token.yAlusd.address
   ];
   const CRV_DEPENDENCIES = [
     {
@@ -262,10 +292,13 @@ export default async function deployContracts(
       curveMetaPool: fraxMetapoolContract.address,
       crvLPToken: token.crvFrax.address,
     },
-
     {
-      curveMetaPool: ousdMetapoolContract.address,
-      crvLPToken: token.crvOusd.address,
+      curveMetaPool: musdMetapoolContract.address,
+      crvLPToken: token.crvMusd.address,
+    },
+    {
+      curveMetaPool: alusdMetapoolContract.address,
+      crvLPToken: token.crvAlusd.address,
     },
   ];
 
@@ -351,12 +384,14 @@ export default async function deployContracts(
     metapools: {
       frax: fraxMetapoolContract,
       rai: raiMetapoolContract,
-      ousd: ousdMetapoolContract,
+      musd: musdMetapoolContract,
+      alusd:alusdMetapoolContract
     },
     vaults: {
       frax: yFraxVault,
       rai: yRaiVault,
-      ousd: yOusdVault,
+      musd: yMusdVault,
+      alusd:yAlusdVault
     },
     butterBatch,
   };
