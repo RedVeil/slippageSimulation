@@ -11,7 +11,6 @@ import {
 } from "hardhat/builtin-tasks/task-names";
 import { internalTask, subtask, task } from "hardhat/config";
 import simulateSlippage from "./simulateSlippage";
-import simulateSlippageTest from "./simulateSlippageTest"
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 require("dotenv").config({ path: ".env" });
 
@@ -21,11 +20,6 @@ task("simulate:slippage", "simulates hysi batch slippage").setAction(
   }
 );
 
-task("simulateTest", "simulates hysi batch slippage").setAction(
-  async (args, hre:HardhatRuntimeEnvironment) => {
-    await simulateSlippageTest(hre);
-  }
-);
 
 // Injects network block limit (minus 1 million) in the abi so
 // ethers uses it instead of running gas estimation.

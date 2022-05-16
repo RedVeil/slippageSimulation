@@ -1,18 +1,17 @@
 import { bigNumberToNumber } from "./utils/formatBigNumber";
 import { Network } from "hardhat/types";
 import deployContracts, { Contracts } from "./utils/deployContracts";
-import { CurveMetapool, MockYearnV2Vault } from "./typechain";
-import { BigNumber, constants } from "ethers";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { formatEther, parseEther } from "@ethersproject/units";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { ERC20 } from "./typechain";
-import { Signer } from "ethers/lib/ethers";
+import { BigNumber, constants, Signer } from "ethers";
+import { ERC20 } from "typechain";
 
 require("dotenv").config({ path: ".env" });
 
 const fs = require("fs");
 
-const SUSD_WHALE_ADDRESS = "0xC8C2b727d864CC75199f5118F0943d2087fB543b";
+const DAI_WHALE_ADDRESS = "0x4967ec98748efb98490663a65b16698069a1eb35";
 
 const impersonateSigner = async (address, network, ethers): Promise<Signer> => {
   await network.provider.request({
@@ -39,53 +38,64 @@ async function sendERC20(
   await erc20.connect(whale).transfer(recipient, amount);
 }
 
-export default async function simulateSlippage(hre): Promise<void> {
+export default async function simulateSlippage(
+  hre: HardhatRuntimeEnvironment
+): Promise<void> {
   const ethers = hre.ethers;
   const network = hre.network;
   const MAX_SLIPPAGE = 0.02;
-  const INPUT_AMOUNT = parseEther("1000");
-  let mintBlockNumber = 14215001;
+  const INPUT_AMOUNT = parseEther("100000");
+  let mintBlockNumber = 14409200;
 
-  const ORGINAL_START_BLOCK_NUMBER = 13976427; // earliest possible block to run the simulation
-  const END_BLOCK_NUMBER = 14320258;
-
-  await network.provider.request({
-    method: "hardhat_reset",
-    params: [
-      {
-        forking: {
-          jsonRpcUrl: process.env.FORKING_RPC_URL,
-          blockNumber: mintBlockNumber,
-        },
-      },
-    ],
-  });
-  const [signer, test]: SignerWithAddress[] = await ethers.getSigners();
-
-  console.log("reset");
+  const ORGINAL_START_BLOCK_NUMBER = 14409165; // earliest possible block to run the simulation
+  const END_BLOCK_NUMBER = 14785800;
 
   while (mintBlockNumber < END_BLOCK_NUMBER) {
+    console.log("reset");
+
+    await network.provider.request({
+      method: "hardhat_reset",
+      params: [
+        {
+          forking: {
+            jsonRpcUrl: process.env.FORKING_RPC_URL,
+            blockNumber: mintBlockNumber,
+          },
+        },
+      ],
+    });
+    const [signer, test]: SignerWithAddress[] = await ethers.getSigners();
     const contracts = await deployContracts(ethers, network, signer);
 
-    const sUSDWhale = await impersonateSigner(
-      SUSD_WHALE_ADDRESS,
+    /* await network.provider.send("hardhat_setBalance", [
+      contracts.faucet.address,
+      "0x152d02c7e14af6800000", // 100k ETH
+    ]);
+
+    await contracts.faucet.sendTokens(
+      contracts.token.dai.address,
+      parseEther("100"),
+      signer.address
+    ); */
+    const daiWhale = await impersonateSigner(
+      DAI_WHALE_ADDRESS,
       network,
       ethers
     );
     console.log(
-      formatEther(await contracts.token.sUSD.balanceOf(SUSD_WHALE_ADDRESS))
+      formatEther(await contracts.token.dai.balanceOf(DAI_WHALE_ADDRESS))
     );
-    await sendEth(SUSD_WHALE_ADDRESS, "10", ethers);
+    await sendEth(DAI_WHALE_ADDRESS, "10", ethers);
     await sendERC20(
-      contracts.token.sUSD,
-      sUSDWhale,
+      contracts.token.dai,
+      daiWhale,
       signer.address,
-      parseEther("20000")
+      INPUT_AMOUNT
     );
 
     const inputAmountInUSD = INPUT_AMOUNT;
 
-    await contracts.token.sUSD.approve(
+    await contracts.token.dai.approve(
       contracts.butterBatch.address,
       constants.MaxUint256
     );
@@ -95,28 +105,37 @@ export default async function simulateSlippage(hre): Promise<void> {
 
     const mintBatchId = await contracts.butterBatch.currentMintBatchId();
     await contracts.butterBatch.connect(signer).batchMint();
+    console.log("minted");
     const mintingBlock = await ethers.provider.getBlock("latest");
     mintBlockNumber = mintingBlock.number;
 
     const hysiBalance = await (
       await contracts.butterBatch.batches(mintBatchId)
     ).claimableTokenBalance;
+    console.log("hysiBalance");
 
     const [tokenAddresses, quantities] =
       await contracts.basicIssuanceModule.getRequiredComponentUnitsForIssue(
         contracts.token.setToken.address,
-        1e18
+        parseEther("1")
       );
+      console.log("quantities");
 
     const hysiValue = await contracts.butterBatch.valueOfComponents(
       tokenAddresses,
       quantities
     );
+    console.log("hysiValue");
+
     const hysiAmountInUSD = hysiValue.mul(hysiBalance);
+    console.log("hysiAmountInUSD");
+
     const slippage =
       bigNumberToNumber(
         inputAmountInUSD.mul(parseEther("1")).div(hysiAmountInUSD)
       ) - 1;
+      console.log("slippage");
+
     fs.appendFileSync(
       "slippage.csv",
       `\r\n${mintBlockNumber},${
@@ -135,10 +154,7 @@ export default async function simulateSlippage(hre): Promise<void> {
     console.log(
       "-----------------------------------------------------------------------------"
     );
-    Array(240)
-      .fill(0)
-      .forEach(async (x) => await ethers.provider.send("evm_mine", []));
-    //mintBlockNumber = mintBlockNumber + 30;
+    mintBlockNumber = mintBlockNumber + 500;
 
     // await contracts.hysiBatchInteraction
     //   .connect(signer)

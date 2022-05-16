@@ -8,6 +8,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "../../utils/ContractRegistryAccess.sol";
+import "../../utils/ACLAuth.sol";
+import "../../utils/KeeperIncentivized.sol";
 import "../../../externals/interfaces/YearnVault.sol";
 import "../../../externals/interfaces/BasicIssuanceModule.sol";
 import "../../../externals/interfaces/ISetToken.sol";
@@ -28,7 +31,7 @@ import "hardhat/console.sol";
  * This means multiple approvals and deposits are necessary to mint one Butter.
  * We batch this process and allow users to pool their funds. Then we pay a keeper to mint or redeem Butter regularly.
  */
-contract FFButterBatchProcessing {
+contract FourXBatchProcessing is Pausable, ReentrancyGuard, ACLAuth, KeeperIncentivized, ContractRegistryAccess {
   using SafeERC20 for YearnVault;
   using SafeERC20 for ISetToken;
   using SafeERC20 for IERC20;
@@ -75,7 +78,7 @@ contract FFButterBatchProcessing {
 
   struct PartnerContracts {
     IibAMM ibAMM; // 0x8338aa899fb3168598d871edc1fe2b4f0ca6bbef
-    ISynthetix synthetix; // 0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F
+    ISynthetix synthetix; // 0x639032d3900875a4cf4960aD6b9ee441657aA93C
     BasicIssuanceModule setBasicIssuanceModule; // 0xd8EF3cACe8b4907117a45B0b125c68560532F94D
   }
 
@@ -108,10 +111,9 @@ contract FFButterBatchProcessing {
 
   /* ========== STATE VARIABLES ========== */
 
-  bytes32 public constant contractName = "FFButterBatchProcessing";
+  bytes32 public constant contractName = "FourXBatchProcessing";
   bytes32 public constant sUsdId = "sUSD";
 
-  IContractRegistry public contractRegistry;
   IStaking public staking;
   ISetToken public setToken;
   ExternalToken public externalToken;
@@ -144,37 +146,16 @@ contract FFButterBatchProcessing {
   event Deposit(address indexed from, uint256 deposit);
   event Withdrawal(address indexed to, uint256 amount);
   event SlippageUpdated(Slippage prev, Slippage current);
-  event BatchMinted(
-    bytes32 batchId,
-    uint256 suppliedTokenAmount,
-    uint256 outputAmount
-  );
-  event BatchRedeemed(
-    bytes32 batchId,
-    uint256 suppliedTokenAmount,
-    uint256 outputAmount
-  );
-  event Claimed(
-    address indexed account,
-    BatchType batchType,
-    uint256 shares,
-    uint256 claimedToken
-  );
+  event BatchMinted(bytes32 batchId, uint256 suppliedTokenAmount, uint256 outputAmount);
+  event BatchRedeemed(bytes32 batchId, uint256 suppliedTokenAmount, uint256 outputAmount);
+  event Claimed(address indexed account, BatchType batchType, uint256 shares, uint256 claimedToken);
   event WithdrawnFromBatch(bytes32 batchId, uint256 amount, address indexed to);
-  event DepositedUnclaimedSetTokenForRedeem(
-    uint256 amount,
-    address indexed account
-  );
-  event ProcessingThresholdUpdated(
-    ProcessingThreshold previousThreshold,
-    ProcessingThreshold newProcessingThreshold
-  );
-  event UnderlyingTokenUpdated(
-    address[] yTokenAddresses,
-    UnderlyingToken[] underlyingTokenByYtoken
-  );
+  event DepositedUnclaimedSetTokenForRedeem(uint256 amount, address indexed account);
+  event ProcessingThresholdUpdated(ProcessingThreshold previousThreshold, ProcessingThreshold newProcessingThreshold);
+  event UnderlyingTokenUpdated(address[] yTokenAddresses, UnderlyingToken[] underlyingTokenByYtoken);
   event RedemptionFeeUpdated(uint256 newRedemptionFee, address newFeeRecipient);
   event SweetheartUpdated(address sweetheart, bool isSweeheart);
+  event StakingUpdated(address beforeAddress, address afterAddress);
 
   /* ========== CONSTRUCTOR ========== */
 
@@ -187,8 +168,7 @@ contract FFButterBatchProcessing {
     address[] memory _yTokenAddresses,
     UnderlyingToken[] memory _underlyingTokenByYtoken,
     ProcessingThreshold memory _processingThreshold
-  ) {
-    contractRegistry = _contractRegistry;
+  ) ContractRegistryAccess(_contractRegistry) {
     staking = _staking;
     setToken = _setToken;
     externalToken = _externalToken;
@@ -204,7 +184,7 @@ contract FFButterBatchProcessing {
     _generateNextBatch(bytes32("mint"), BatchType.Mint);
     _generateNextBatch(bytes32("redeem"), BatchType.Redeem);
 
-    slippage.mintBps = 18;
+    slippage.mintBps = 40;
     slippage.redeemBps = 40;
   }
 
@@ -213,11 +193,7 @@ contract FFButterBatchProcessing {
    * @notice Get ids for all batches that a user has interacted with
    * @param _account The address for whom we want to retrieve batches
    */
-  function getAccountBatches(address _account)
-    external
-    view
-    returns (bytes32[] memory)
-  {
+  function getAccountBatches(address _account) external view returns (bytes32[] memory) {
     return accountBatches[_account];
   }
 
@@ -231,34 +207,23 @@ contract FFButterBatchProcessing {
     return mintAmount - delta;
   }
 
-  function getMinAmountFromRedeem(uint256 _valueOfComponents, uint256 _slippage)
-    public
-    view
-    returns (uint256)
-  {
+  function getMinAmountFromRedeem(uint256 _valueOfComponents, uint256 _slippage) public view returns (uint256) {
     uint256 delta = (_valueOfComponents * _slippage) / 10_000;
     return _valueOfComponents - delta;
   }
 
-  function valueOfComponents(
-    address[] memory _tokenAddresses,
-    uint256[] memory _quantities
-  ) public view returns (uint256) {
+  function valueOfComponents(address[] memory _tokenAddresses, uint256[] memory _quantities)
+    public
+    view
+    returns (uint256)
+  {
     uint256 value;
     for (uint256 i = 0; i < _tokenAddresses.length; i++) {
       uint256 ibTokenPrice = (1e36 /
-        partnerContracts.ibAMM.quote(
-          underlyingTokenByYtoken[_tokenAddresses[i]].ibToken,
-          1e18
-        ));
+        partnerContracts.ibAMM.buy_quote(underlyingTokenByYtoken[_tokenAddresses[i]].ibToken, 1e18));
       uint256 ySharePrice = YearnVault(_tokenAddresses[i]).pricePerShare();
-      uint256 virtualPrice = underlyingTokenByYtoken[_tokenAddresses[i]]
-        .curveMetaPool
-        .get_virtual_price();
-      value +=
-        (((((ibTokenPrice * ySharePrice) / 1e18) * virtualPrice) / 1e18) *
-          _quantities[i]) /
-        1e18;
+      uint256 virtualPrice = underlyingTokenByYtoken[_tokenAddresses[i]].curveMetaPool.get_virtual_price();
+      value += (((((ibTokenPrice * ySharePrice) / 1e18) * virtualPrice) / 1e18) * _quantities[i]) / 1e18;
     }
     return value;
   }
@@ -270,19 +235,17 @@ contract FFButterBatchProcessing {
    * @param _amount Amount of 3cr3CRV to use for minting
    * @param _depositFor User that gets the shares attributed to (for use in zapper contract)
    */
-  function depositForMint(uint256 _amount, address _depositFor) external {
-    IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-      .requireApprovedContractOrEOA(msg.sender);
+  function depositForMint(uint256 _amount, address _depositFor)
+    external
+    nonReentrant
+    whenNotPaused
+    onlyApprovedContractOrEOA
+  {
     require(
-      IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-        .hasRole(keccak256("FFButterZapper"), msg.sender) ||
-        msg.sender == _depositFor,
+      _hasRole(keccak256("FourXZapper"), msg.sender) || msg.sender == _depositFor,
       "you cant transfer other funds"
     );
-    require(
-      externalToken.input.balanceOf(msg.sender) >= _amount,
-      "insufficent balance"
-    );
+    require(externalToken.input.balanceOf(msg.sender) >= _amount, "insufficent balance");
     externalToken.input.transferFrom(msg.sender, address(this), _amount);
     _deposit(_amount, currentMintBatchId, _depositFor);
   }
@@ -291,9 +254,7 @@ contract FFButterBatchProcessing {
    * @notice deposits funds in the current redeem batch
    * @param _amount amount of Butter to be redeemed
    */
-  function depositForRedeem(uint256 _amount) external {
-    IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-      .requireApprovedContractOrEOA(msg.sender);
+  function depositForRedeem(uint256 _amount) external nonReentrant whenNotPaused onlyApprovedContractOrEOA {
     require(setToken.balanceOf(msg.sender) >= _amount, "insufficient balance");
     setToken.transferFrom(msg.sender, address(this), _amount);
     _deposit(_amount, currentRedeemBatchId, msg.sender);
@@ -315,15 +276,10 @@ contract FFButterBatchProcessing {
     Batch storage batch = batches[_batchId];
     uint256 accountBalance = accountBalances[_batchId][_withdrawFor];
     require(batch.claimable == false, "already processed");
-    require(
-      accountBalance >= _amountToWithdraw,
-      "account has insufficient funds"
-    );
+    require(accountBalance >= _amountToWithdraw, "account has insufficient funds");
 
     //At this point the account balance is equal to the supplied token and can be used interchangeably
-    accountBalances[_batchId][_withdrawFor] =
-      accountBalance -
-      _amountToWithdraw;
+    accountBalances[_batchId][_withdrawFor] = accountBalance - _amountToWithdraw;
     batch.suppliedTokenBalance = batch.suppliedTokenBalance - _amountToWithdraw;
     batch.unclaimedShares = batch.unclaimedShares - _amountToWithdraw;
 
@@ -340,16 +296,11 @@ contract FFButterBatchProcessing {
    * @param _batchId Id of batch to claim from
    * @param _claimFor User that gets the shares attributed to (for use in zapper contract)
    */
-  function claim(bytes32 _batchId, address _claimFor)
-    external
-    returns (uint256)
-  {
-    (
-      address recipient,
-      BatchType batchType,
-      uint256 accountBalance,
-      uint256 tokenAmountToClaim
-    ) = _prepareClaim(_batchId, _claimFor);
+  function claim(bytes32 _batchId, address _claimFor) external returns (uint256) {
+    (address recipient, BatchType batchType, uint256 accountBalance, uint256 tokenAmountToClaim) = _prepareClaim(
+      _batchId,
+      _claimFor
+    );
     //Transfer token
     if (batchType == BatchType.Mint) {
       setToken.safeTransfer(recipient, tokenAmountToClaim);
@@ -376,12 +327,10 @@ contract FFButterBatchProcessing {
    * @param _claimFor User that gets the shares attributed to (for use in zapper contract)
    */
   function claimAndStake(bytes32 _batchId, address _claimFor) external {
-    (
-      address recipient,
-      BatchType batchType,
-      uint256 accountBalance,
-      uint256 tokenAmountToClaim
-    ) = _prepareClaim(_batchId, _claimFor);
+    (address recipient, BatchType batchType, uint256 accountBalance, uint256 tokenAmountToClaim) = _prepareClaim(
+      _batchId,
+      _claimFor
+    );
     emit Claimed(recipient, batchType, accountBalance, tokenAmountToClaim);
 
     //Transfer token
@@ -396,10 +345,10 @@ contract FFButterBatchProcessing {
    * @dev Since our output token is not the same as our input token we would need to swap the output token via 2 hops into out input token.
           If we want to do so id prefer to create a second function to do so as it would also require a slippage parameter and the swapping logic
    */
-  function depositUnclaimedSetTokenForRedeem(
-    bytes32[] calldata _batchIds,
-    uint256[] calldata _shares
-  ) external {
+  function depositUnclaimedSetTokenForRedeem(bytes32[] calldata _batchIds, uint256[] calldata _shares)
+    external
+    whenNotPaused
+  {
     require(_batchIds.length == _shares.length, "array lengths must match");
 
     uint256 totalAmount;
@@ -414,11 +363,8 @@ contract FFButterBatchProcessing {
       require(batch.batchType == BatchType.Mint, "incorrect batchType");
       require(accountBalance >= _shares[i], "account has insufficient funds");
 
-      uint256 tokenAmountToClaim = (batch.claimableTokenBalance * _shares[i]) /
-        batch.unclaimedShares;
-      batch.claimableTokenBalance =
-        batch.claimableTokenBalance -
-        tokenAmountToClaim;
+      uint256 tokenAmountToClaim = (batch.claimableTokenBalance * _shares[i]) / batch.unclaimedShares;
+      batch.claimableTokenBalance = batch.claimableTokenBalance - tokenAmountToClaim;
       batch.unclaimedShares = batch.unclaimedShares - _shares[i];
       accountBalances[batch.batchId][msg.sender] = accountBalance - _shares[i];
 
@@ -438,11 +384,7 @@ contract FFButterBatchProcessing {
    * @dev In order to get 3CRV we can implement a zap to move stables into the curve tri-pool
    * @dev handleKeeperIncentive checks if the msg.sender is a permissioned keeper and pays them a reward for calling this function (see KeeperIncentive.sol)
    */
-  function batchMint() external {
-    IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-      .requireApprovedContractOrEOA(msg.sender);
-    IKeeperIncentive(contractRegistry.getContract(keccak256("KeeperIncentive")))
-      .handleKeeperIncentive(contractName, 0, msg.sender);
+  function batchMint() external whenNotPaused keeperIncentive(contractName, 0) {
     Batch storage batch = batches[currentMintBatchId];
 
     //Check if there was enough time between the last batch minting and this attempt...
@@ -459,25 +401,21 @@ contract FFButterBatchProcessing {
 
     //Check if this contract has enough 3CRV -- should technically not be necessary
     require(
-      externalToken.input.balanceOf(address(this)) >=
-        batch.suppliedTokenBalance,
+      externalToken.input.balanceOf(address(this)) >= batch.suppliedTokenBalance,
       "account has insufficient balance of token to mint"
     );
 
     //Get the quantity of yToken for one Butter
-    (
-      address[] memory tokenAddresses,
-      uint256[] memory quantities
-    ) = partnerContracts
-        .setBasicIssuanceModule
-        .getRequiredComponentUnitsForIssue(setToken, 1e18);
+    (address[] memory tokenAddresses, uint256[] memory quantities) = partnerContracts
+      .setBasicIssuanceModule
+      .getRequiredComponentUnitsForIssue(setToken, 1e18);
     uint256 butterValue = valueOfComponents(tokenAddresses, quantities);
 
-    //Total value of leftover yToken valued in MIM
-    uint256 totalLeftoverInMim;
+    //Total value of leftover yToken valued in Usd
+    uint256 totalLeftoverValue;
 
-    //Individual yToken leftovers valued in MIM
-    uint256[] memory leftoversInMim = new uint256[](quantities.length);
+    //Individual yToken leftovers valued in Usd
+    uint256[] memory leftoversValue = new uint256[](quantities.length);
 
     uint256[] memory ratios = new uint256[](quantities.length);
 
@@ -486,79 +424,51 @@ contract FFButterBatchProcessing {
       uint256 yTokenInCrvToken = YearnVault(tokenAddresses[i]).pricePerShare();
 
       //Check how many iB-Token are needed to mint one crvLPToken
-      uint256 crvLPTokenValue = 2e18 -
-        underlyingTokenByYtoken[tokenAddresses[i]]
-          .curveMetaPool
-          .calc_token_amount([uint256(0), 1e18], true);
+      uint256 crvLPTokenInIbToken = underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool.get_virtual_price();
 
       //Calculate how many iB-Token are needed to mint one yToken
-      uint256 yTokenInIbToken = (yTokenInCrvToken * crvLPTokenValue) / 1e18;
+      uint256 yTokenInIbToken = (yTokenInCrvToken * crvLPTokenInIbToken) / 1e18;
 
-      uint256 quantityInMim = (quantities[i] * yTokenInIbToken) / 1e18;
+      uint256 yTokenValue = (yTokenInIbToken *
+        (1e36 / partnerContracts.ibAMM.buy_quote(underlyingTokenByYtoken[tokenAddresses[i]].ibToken, 1e18))) / 1e18;
 
-      ratios[i] = (butterValue * 1e18) / quantityInMim;
+      uint256 quantityValue = (quantities[i] * yTokenValue) / 1e18;
 
-      //Calculate how much the yToken leftover are worth in MIM
-      uint256 leftoverInMim = (YearnVault(tokenAddresses[i]).balanceOf(
-        address(this)
-      ) * yTokenInIbToken) / 1e18;
+      ratios[i] = (butterValue * 1e18) / quantityValue;
+
+      //Calculate how much the yToken leftover are worth in Usd
+      uint256 leftoverValue = (YearnVault(tokenAddresses[i]).balanceOf(address(this)) * yTokenValue) / 1e18;
 
       // //Add the leftover value to the array of leftovers for later use
-      leftoversInMim[i] = leftoverInMim;
+      leftoversValue[i] = leftoverValue;
 
       // //Add the leftover value to the total leftover value
-      totalLeftoverInMim = totalLeftoverInMim + leftoverInMim;
+      totalLeftoverValue = totalLeftoverValue + leftoverValue;
     }
 
-    //Calculate the total value of supplied token + leftovers in MIM
-    uint256 suppliedTokenBalancePlusLeftovers = batch.suppliedTokenBalance +
-      totalLeftoverInMim;
+    //Calculate the total value of supplied token + leftovers in Usd
+    uint256 suppliedTokenBalancePlusLeftovers = batch.suppliedTokenBalance + totalLeftoverValue;
 
     for (uint256 i; i < tokenAddresses.length; i++) {
       //Calculate the pool allocation by dividing the suppliedTokenBalance by number of token addresses and take leftovers into account
       //Due to rounding in the calculations above there were 18 Basis points of mim where were not used. Therefore we add them here manually.
-      uint256 poolAllocation = ((suppliedTokenBalancePlusLeftovers * 1e18) /
-        ratios[i]) - leftoversInMim[i];
+      uint256 poolAllocation = ((suppliedTokenBalancePlusLeftovers * 1e18) / ratios[i]) - leftoversValue[i];
       if (poolAllocation > externalToken.input.balanceOf(address(this))) {
         poolAllocation = externalToken.input.balanceOf(address(this));
       }
-      console.log("got here");
-      _swapFromSUSD(
-        underlyingTokenByYtoken[tokenAddresses[i]].sId,
-        poolAllocation
-      );
-      console.log("got here2");
-      console.log(
-        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).balanceOf(
-          address(this)
-        )
-      );
-      console.log(
-        address(underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool)
-      );
-      console.log(
-        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).allowance(
-          address(this),
-          address(underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool)
-        )
-      );
+      _buyIbToken(underlyingTokenByYtoken[tokenAddresses[i]].ibToken, poolAllocation);
+
       //Pool 3CRV to get crvLPToken
       _sendToCurve(
-        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).balanceOf(
-          address(this)
-        ),
+        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].ibToken).balanceOf(address(this)),
         underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool
       );
-      console.log("got here3");
 
       //Deposit crvLPToken to get yToken
       _sendToYearn(
-        underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool.balanceOf(
-          address(this)
-        ),
+        underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool.balanceOf(address(this)),
         YearnVault(tokenAddresses[i])
       );
-      console.log("got here4");
 
       //Approve yToken for minting
       YearnVault(tokenAddresses[i]).safeIncreaseAllowance(
@@ -568,34 +478,23 @@ contract FFButterBatchProcessing {
     }
 
     //Get the minimum amount of butter that we can mint with our balances of yToken
-    uint256 butterAmount = (YearnVault(tokenAddresses[0]).balanceOf(
-      address(this)
-    ) * 1e18) / quantities[0];
+    uint256 butterAmount = (YearnVault(tokenAddresses[0]).balanceOf(address(this)) * 1e18) / quantities[0];
 
     for (uint256 i = 1; i < tokenAddresses.length; i++) {
       butterAmount = Math.min(
         butterAmount,
-        (YearnVault(tokenAddresses[i]).balanceOf(address(this)) * 1e18) /
-          quantities[i]
+        (YearnVault(tokenAddresses[i]).balanceOf(address(this)) * 1e18) / quantities[i]
       );
     }
 
     require(
       butterAmount >=
-        getMinAmountToMint(
-          batch.suppliedTokenBalance,
-          valueOfComponents(tokenAddresses, quantities),
-          slippage.mintBps
-        ),
+        getMinAmountToMint(batch.suppliedTokenBalance, valueOfComponents(tokenAddresses, quantities), slippage.mintBps),
       "slippage too high"
     );
 
     //Mint Butter
-    partnerContracts.setBasicIssuanceModule.issue(
-      setToken,
-      butterAmount,
-      address(this)
-    );
+    partnerContracts.setBasicIssuanceModule.issue(setToken, butterAmount, address(this));
 
     //Save the minted amount Butter as claimable token for the batch
     batch.claimableTokenBalance = butterAmount;
@@ -606,11 +505,7 @@ contract FFButterBatchProcessing {
     //Update lastMintedAt for cooldown calculations
     lastMintedAt = block.timestamp;
 
-    emit BatchMinted(
-      currentMintBatchId,
-      batch.suppliedTokenBalance,
-      butterAmount
-    );
+    emit BatchMinted(currentMintBatchId, batch.suppliedTokenBalance, butterAmount);
 
     //Create the next mint batch
     _generateNextBatch(currentMintBatchId, BatchType.Mint);
@@ -622,11 +517,7 @@ contract FFButterBatchProcessing {
    * @dev In order to get stablecoins from 3CRV we can use a zap to redeem 3CRV for stables in the curve tri-pool
    * @dev handleKeeperIncentive checks if the msg.sender is a permissioned keeper and pays them a reward for calling this function (see KeeperIncentive.sol)
    */
-  function batchRedeem() external {
-    IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-      .requireApprovedContractOrEOA(msg.sender);
-    IKeeperIncentive(contractRegistry.getContract(keccak256("KeeperIncentive")))
-      .handleKeeperIncentive(contractName, 1, msg.sender);
+  function batchRedeem() external whenNotPaused keeperIncentive(contractName, 1) {
     Batch storage batch = batches[currentRedeemBatchId];
 
     //Check if there was enough time between the last batch redemption and this attempt...
@@ -642,64 +533,40 @@ contract FFButterBatchProcessing {
     require(batch.claimable == false, "already redeemed");
 
     //Get tokenAddresses for mapping of underlying
-    (
-      address[] memory tokenAddresses,
-      uint256[] memory quantities
-    ) = partnerContracts
-        .setBasicIssuanceModule
-        .getRequiredComponentUnitsForIssue(
-          setToken,
-          batch.suppliedTokenBalance
-        );
+    (address[] memory tokenAddresses, uint256[] memory quantities) = partnerContracts
+      .setBasicIssuanceModule
+      .getRequiredComponentUnitsForIssue(setToken, batch.suppliedTokenBalance);
 
     //Allow setBasicIssuanceModule to use Butter
     _setBasicIssuanceModuleAllowance(batch.suppliedTokenBalance);
 
     //Redeem Butter for yToken
-    partnerContracts.setBasicIssuanceModule.redeem(
-      setToken,
-      batch.suppliedTokenBalance,
-      address(this)
-    );
+    partnerContracts.setBasicIssuanceModule.redeem(setToken, batch.suppliedTokenBalance, address(this));
 
     for (uint256 i; i < tokenAddresses.length; i++) {
       //Deposit yToken to receive crvLPToken
-      _withdrawFromYearn(
-        YearnVault(tokenAddresses[i]).balanceOf(address(this)),
-        YearnVault(tokenAddresses[i])
-      );
+      _withdrawFromYearn(YearnVault(tokenAddresses[i]).balanceOf(address(this)), YearnVault(tokenAddresses[i]));
 
-      //Deposit crvLPToken to receive 3CRV
+      //Deposit crvLPToken to receive sUsd
       _withdrawFromCurve(
-        underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool.balanceOf(
-          address(this)
-        ),
+        underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool.balanceOf(address(this)),
         underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool
       );
 
-      _swapToSUSD(
+      _swapToSusd(
         underlyingTokenByYtoken[tokenAddresses[i]].sId,
-        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).balanceOf(
-          address(this)
-        )
+        IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken).balanceOf(address(this))
       );
     }
 
     batch.claimableTokenBalance = externalToken.output.balanceOf(address(this));
     require(
       batch.claimableTokenBalance >=
-        getMinAmountFromRedeem(
-          valueOfComponents(tokenAddresses, quantities),
-          slippage.redeemBps
-        ),
+        getMinAmountFromRedeem(valueOfComponents(tokenAddresses, quantities), slippage.redeemBps),
       "slippage too high"
     );
 
-    emit BatchRedeemed(
-      currentRedeemBatchId,
-      batch.suppliedTokenBalance,
-      batch.claimableTokenBalance
-    );
+    emit BatchRedeemed(currentRedeemBatchId, batch.suppliedTokenBalance, batch.claimableTokenBalance);
 
     //Set claimable to true so users can claim their Butter
     batch.claimable = true;
@@ -715,36 +582,38 @@ contract FFButterBatchProcessing {
    * @notice sets approval for contracts that require access to assets held by this contract
    */
   function setApprovals() external {
-    (address[] memory tokenAddresses, ) = partnerContracts
-      .setBasicIssuanceModule
-      .getRequiredComponentUnitsForIssue(setToken, 1e18);
+    (address[] memory tokenAddresses, ) = partnerContracts.setBasicIssuanceModule.getRequiredComponentUnitsForIssue(
+      setToken,
+      1e18
+    );
 
     for (uint256 i; i < tokenAddresses.length; i++) {
+      IERC20 ibToken = IERC20(underlyingTokenByYtoken[tokenAddresses[i]].ibToken);
       IERC20 sToken = IERC20(underlyingTokenByYtoken[tokenAddresses[i]].sToken);
-      CurveMetapool curveMetapool = underlyingTokenByYtoken[tokenAddresses[i]]
-        .curveMetaPool;
+      CurveMetapool curveMetapool = underlyingTokenByYtoken[tokenAddresses[i]].curveMetaPool;
       YearnVault yearnVault = YearnVault(tokenAddresses[i]);
 
-      _maxApprove(sToken, address(curveMetapool));
-      _maxApprove(sToken, address(partnerContracts.synthetix));
-      _maxApprove(curveMetapool, address(yearnVault));
-      _maxApprove(curveMetapool, address(curveMetapool));
+      ibToken.safeApprove(address(curveMetapool), 0);
+      ibToken.safeApprove(address(curveMetapool), type(uint256).max);
+
+      sToken.safeApprove(address(partnerContracts.synthetix), 0);
+      sToken.safeApprove(address(partnerContracts.synthetix), type(uint256).max);
+
+      curveMetapool.safeApprove(address(yearnVault), 0);
+      curveMetapool.safeApprove(address(yearnVault), type(uint256).max);
+
+      curveMetapool.safeApprove(address(curveMetapool), 0);
+      curveMetapool.safeApprove(address(curveMetapool), type(uint256).max);
     }
-    _maxApprove(externalToken.input, address(partnerContracts.synthetix));
-    _maxApprove(setToken, address(staking));
+
+    externalToken.input.safeApprove(address(partnerContracts.ibAMM), 0);
+    externalToken.input.safeApprove(address(partnerContracts.ibAMM), type(uint256).max);
+
+    setToken.safeApprove(address(staking), 0);
+    setToken.safeApprove(address(staking), type(uint256).max);
   }
 
   /* ========== RESTRICTED FUNCTIONS ========== */
-
-  /**
-   * @notice sets max allowance given a token and a spender
-   * @param _token the token which gets approved to be spend
-   * @param _spender the spender which gets a max allowance to spend `_token`
-   */
-  function _maxApprove(IERC20 _token, address _spender) internal {
-    _token.safeApprove(_spender, 0);
-    _token.safeApprove(_spender, type(uint256).max);
-  }
 
   /**
    * @notice sets allowance for basic issuance module
@@ -752,10 +621,7 @@ contract FFButterBatchProcessing {
    */
   function _setBasicIssuanceModuleAllowance(uint256 _amount) internal {
     setToken.safeApprove(address(partnerContracts.setBasicIssuanceModule), 0);
-    setToken.safeApprove(
-      address(partnerContracts.setBasicIssuanceModule),
-      _amount
-    );
+    setToken.safeApprove(address(partnerContracts.setBasicIssuanceModule), _amount);
   }
 
   /**
@@ -767,21 +633,13 @@ contract FFButterBatchProcessing {
    */
   function _getRecipient(address _account) internal view returns (address) {
     //Make sure that only zapper can withdraw from someone else
-    require(
-      IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-        .hasRole(keccak256("FFButterZapper"), msg.sender) ||
-        msg.sender == _account,
-      "you cant transfer other funds"
-    );
+    require(_hasRole(keccak256("FourXZapper"), msg.sender) || msg.sender == _account, "you cant transfer other funds");
 
     //Set recipient per default to _account
     address recipient = _account;
 
     //set the recipient to zapper if its called by the zapper
-    if (
-      IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-        .hasRole(keccak256("FFButterZapper"), msg.sender)
-    ) {
+    if (_hasRole(keccak256("FourXZapper"), msg.sender)) {
       recipient = msg.sender;
     }
     return recipient;
@@ -792,10 +650,7 @@ contract FFButterBatchProcessing {
    * @param _currentBatchId takes the current mint or redeem batch id
    * @param _batchType BatchType of the newly created id
    */
-  function _generateNextBatch(bytes32 _currentBatchId, BatchType _batchType)
-    internal
-    returns (bytes32)
-  {
+  function _generateNextBatch(bytes32 _currentBatchId, BatchType _batchType) internal returns (bytes32) {
     bytes32 id = _generateNextBatchId(_currentBatchId);
     batchIds.push(id);
     Batch storage batch = batches[id];
@@ -832,15 +687,12 @@ contract FFButterBatchProcessing {
     //Add the new funds to the batch
     batch.suppliedTokenBalance = batch.suppliedTokenBalance + _amount;
     batch.unclaimedShares = batch.unclaimedShares + _amount;
-    accountBalances[_currentBatchId][_depositFor] =
-      accountBalances[_currentBatchId][_depositFor] +
-      _amount;
+    accountBalances[_currentBatchId][_depositFor] = accountBalances[_currentBatchId][_depositFor] + _amount;
 
     //Save the batchId for the user so they can be retrieved to claim the batch
     if (
       accountBatches[_depositFor].length == 0 ||
-      accountBatches[_depositFor][accountBatches[_depositFor].length - 1] !=
-      _currentBatchId
+      accountBatches[_depositFor][accountBatches[_depositFor].length - 1] != _currentBatchId
     ) {
       accountBatches[_depositFor].push(_currentBatchId);
     }
@@ -867,65 +719,49 @@ contract FFButterBatchProcessing {
 
     address recipient = _getRecipient(_claimFor);
     uint256 accountBalance = accountBalances[_batchId][_claimFor];
-    require(
-      accountBalance <= batch.unclaimedShares,
-      "claiming too many shares"
-    );
+    require(accountBalance <= batch.unclaimedShares, "claiming too many shares");
 
     //Calculate how many token will be claimed
-    uint256 tokenAmountToClaim = (batch.claimableTokenBalance *
-      accountBalance) / batch.unclaimedShares;
+    uint256 tokenAmountToClaim = (batch.claimableTokenBalance * accountBalance) / batch.unclaimedShares;
 
     //Subtract the claimed token from the batch
-    batch.claimableTokenBalance =
-      batch.claimableTokenBalance -
-      tokenAmountToClaim;
+    batch.claimableTokenBalance = batch.claimableTokenBalance - tokenAmountToClaim;
     batch.unclaimedShares = batch.unclaimedShares - accountBalance;
     accountBalances[_batchId][_claimFor] = 0;
 
     return (recipient, batch.batchType, accountBalance, tokenAmountToClaim);
   }
 
-  function _swapForIbToken(address _ffToken, uint256 _amount) internal {
-    partnerContracts.ibAMM.swap(_ffToken, _amount, 0);
+  function _buyIbToken(address _ffToken, uint256 _amount) internal {
+    partnerContracts.ibAMM.buy(_ffToken, _amount, 0);
   }
 
-  function _swapFromSUSD(bytes32 _sId, uint256 _amount) internal {
-    partnerContracts.synthetix.exchangeAtomically(sUsdId, _amount, _sId, "");
-  }
-
-  function _swapToSUSD(bytes32 _sId, uint256 _amount) internal {
-    partnerContracts.synthetix.exchangeAtomically(_sId, _amount, sUsdId, "");
+  function _swapToSusd(bytes32 _sId, uint256 _amount) internal {
+    //TODO get tracking code
+    partnerContracts.synthetix.exchangeAtomically(_sId, _amount, sUsdId, "0x00", 0);
   }
 
   /**
-   * @notice Deposit 3CRV in a curve metapool for its LP-Token
-   * @param _amount The amount of 3CRV that gets deposited
+   * @notice Deposit ibToken in a curve metapool for its LP-Token
+   * @param _amount The amount of ibToken that gets deposited
    * @param _curveMetapool The metapool where we want to provide liquidity
    */
-  function _sendToCurve(uint256 _amount, CurveMetapool _curveMetapool)
-    internal
-  {
+  function _sendToCurve(uint256 _amount, CurveMetapool _curveMetapool) internal {
     //Takes 3CRV and sends lpToken to this contract
     //Metapools take an array of amounts [ibToken, sToken].
     //The second variable determines the min amount of LP-Token we want to receive (slippage control)
-    console.log("send");
-    _curveMetapool.add_liquidity([0, _amount], 0);
-    console.log("added");
+    _curveMetapool.add_liquidity([_amount, 0], 0);
   }
 
   /**
-   * @notice Withdraws 3CRV for deposited crvLPToken
+   * @notice Withdraws sToken for deposited crvLPToken
    * @param _amount The amount of crvLPToken that get deposited
    * @param _curveMetapool The metapool where we want to provide liquidity
    */
-  function _withdrawFromCurve(uint256 _amount, CurveMetapool _curveMetapool)
-    internal
-  {
-    //Takes lp Token and sends 3CRV to this contract
+  function _withdrawFromCurve(uint256 _amount, CurveMetapool _curveMetapool) internal {
+    //Takes lp Token and sends sToken to this contract
     //The second variable is the index for the token we want to receive (0 = ibToken, 1 = sToken)
     //The third variable determines min amount of token we want to receive (slippage control)
-    console.log("withdraw");
     _curveMetapool.remove_liquidity_one_coin(_amount, 1, 0);
   }
 
@@ -944,9 +780,7 @@ contract FFButterBatchProcessing {
    * @param _amount The amount of crvLPToken which we deposit
    * @param _yearnVault The yearn Vault in which we deposit
    */
-  function _withdrawFromYearn(uint256 _amount, YearnVault _yearnVault)
-    internal
-  {
+  function _withdrawFromYearn(uint256 _amount, YearnVault _yearnVault) internal {
     //Takes yToken and sends crvLPToken to this contract
     _yearnVault.withdraw(_amount);
   }
@@ -955,32 +789,27 @@ contract FFButterBatchProcessing {
    * @notice Generates the next batch id for new deposits
    * @param _currentBatchId takes the current mint or redeem batch id
    */
-  function _generateNextBatchId(bytes32 _currentBatchId)
-    internal
-    view
-    returns (bytes32)
-  {
+  function _generateNextBatchId(bytes32 _currentBatchId) internal view returns (bytes32) {
     return keccak256(abi.encodePacked(block.timestamp, _currentBatchId));
   }
 
   /* ========== ADMIN ========== */
 
   /**
-   * @notice sets slippage for mint and redeem
-   * @param _mintSlippage amount in bps (e.g. 50 = 0.5%)
-   * @param _redeemSlippage amount in bps (e.g. 50 = 0.5%)
+   * @notice Updates the staking contract
    */
-  function setSlippage(uint256 _mintSlippage, uint256 _redeemSlippage)
-    external
-  {
-    IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-      .requireRole(keccak256("DAO"), msg.sender);
-    Slippage memory newSlippage = Slippage({
-      mintBps: _mintSlippage,
-      redeemBps: _redeemSlippage
-    });
-    emit SlippageUpdated(slippage, newSlippage);
-    slippage = newSlippage;
+  function setStaking(address _staking) external onlyRole(DAO_ROLE) {
+    emit StakingUpdated(address(staking), _staking);
+    staking = IStaking(_staking);
+  }
+
+  /**
+   * @notice Toggles an address as Sweetheart (partner addresses that don't pay a redemption fee)
+   * @param _sweetheart The address that shall become/lose their sweetheart status
+   */
+  function updateSweetheart(address _sweetheart, bool _enabled) external onlyRole(DAO_ROLE) {
+    sweethearts[_sweetheart] = _enabled;
+    emit SweetheartUpdated(_sweetheart, _enabled);
   }
 
   /**
@@ -991,9 +820,7 @@ contract FFButterBatchProcessing {
   function setUnderlyingTokenByYtoken(
     address[] memory _yTokenAddresses,
     UnderlyingToken[] calldata _underlyingTokenByYtoken
-  ) public {
-    IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-      .requireRole(keccak256("DAO"), msg.sender);
+  ) external onlyRole(DAO_ROLE) {
     _setUnderlyingTokenByYtoken(_yTokenAddresses, _underlyingTokenByYtoken);
   }
 
@@ -1010,9 +837,7 @@ contract FFButterBatchProcessing {
   ) internal {
     emit UnderlyingTokenUpdated(_yTokenAddresses, _underlyingTokenByYtoken);
     for (uint256 i; i < _yTokenAddresses.length; i++) {
-      underlyingTokenByYtoken[_yTokenAddresses[i]] = _underlyingTokenByYtoken[
-        i
-      ];
+      underlyingTokenByYtoken[_yTokenAddresses[i]] = _underlyingTokenByYtoken[i];
     }
   }
 
@@ -1027,18 +852,71 @@ contract FFButterBatchProcessing {
     uint256 _cooldown,
     uint256 _mintThreshold,
     uint256 _redeemThreshold
-  ) external {
-    IACLRegistry(contractRegistry.getContract(keccak256("ACLRegistry")))
-      .requireRole(keccak256("DAO"), msg.sender);
+  ) external onlyRole(DAO_ROLE) {
     ProcessingThreshold memory newProcessingThreshold = ProcessingThreshold({
       batchCooldown: _cooldown,
       mintThreshold: _mintThreshold,
       redeemThreshold: _redeemThreshold
     });
-    emit ProcessingThresholdUpdated(
-      processingThreshold,
-      newProcessingThreshold
-    );
+    emit ProcessingThresholdUpdated(processingThreshold, newProcessingThreshold);
     processingThreshold = newProcessingThreshold;
+  }
+
+  /**
+   * @notice sets slippage for mint and redeem
+   * @param _mintSlippage amount in bps (e.g. 50 = 0.5%)
+   * @param _redeemSlippage amount in bps (e.g. 50 = 0.5%)
+   */
+  function setSlippage(uint256 _mintSlippage, uint256 _redeemSlippage) external onlyRole(DAO_ROLE) {
+    //require(_mintSlippage <= 200 && _redeemSlippage <= 200, "slippage too high");
+    Slippage memory newSlippage = Slippage({ mintBps: _mintSlippage, redeemBps: _redeemSlippage });
+    emit SlippageUpdated(slippage, newSlippage);
+    slippage = newSlippage;
+  }
+
+  /**
+   * @notice Changes the redemption fee rate and the fee recipient
+   * @param _feeRate Redemption fee rate in basis points
+   * @param _recipient The recipient which receives these fees (Should be DAO treasury)
+   * @dev Per default both of these values are not set. Therefore a fee has to be explicitly be set with this function
+   */
+  function setRedemptionFee(uint256 _feeRate, address _recipient) external onlyRole(DAO_ROLE) {
+    require(_feeRate <= 100, "dont get greedy");
+    redemptionFee.rate = _feeRate;
+    redemptionFee.recipient = _recipient;
+    emit RedemptionFeeUpdated(_feeRate, _recipient);
+  }
+
+  /**
+   * @notice Claims all accumulated redemption fees in 3CRV
+   */
+  function claimRedemptionFee() external {
+    externalToken.input.safeTransfer(redemptionFee.recipient, redemptionFee.accumulated);
+    redemptionFee.accumulated = 0;
+  }
+
+  /**
+   * @notice Pauses the contract.
+   * @dev All function with the modifer `whenNotPaused` cant be called anymore. Namly deposits and mint/redeem
+   */
+  function pause() external onlyRole(DAO_ROLE) {
+    _pause();
+  }
+
+  /**
+   * @notice Unpauses the contract.
+   * @dev All function with the modifer `whenNotPaused` cant be called anymore. Namly deposits and mint/redeem
+   */
+  function unpause() external onlyRole(DAO_ROLE) {
+    _unpause();
+  }
+
+  function _getContract(bytes32 _name)
+    internal
+    view
+    override(ACLAuth, KeeperIncentivized, ContractRegistryAccess)
+    returns (address)
+  {
+    return super._getContract(_name);
   }
 }
