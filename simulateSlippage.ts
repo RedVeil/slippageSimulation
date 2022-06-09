@@ -31,7 +31,7 @@ export default async function simulateSlippage(hre): Promise<void> {
   const network = hre.network;
   const MAX_SLIPPAGE = 0.002;
   const INPUT_AMOUNT = BigNumber.from(100_000_000_000);
-  let mintBlockNumber = 14399955;
+  let mintBlockNumber = 14921038;
 
   const ORGINAL_START_BLOCK_NUMBER = 14385108; // earliest possible block to run the simulation
   const END_BLOCK_NUMBER = 14932613;
