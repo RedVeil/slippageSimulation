@@ -12,7 +12,6 @@ const fs = require("fs");
 
 async function getHysiBalanceInUSD(
   hysiBalance: BigNumber,
-  componentMap: ComponentMap,
   contracts: Contracts
 ): Promise<BigNumber> {
   const components =
@@ -23,40 +22,19 @@ async function getHysiBalanceInUSD(
   const componentAddresses = components[0];
   const componentAmounts = components[1];
 
-  const componentVirtualPrices = await Promise.all(
-    componentAddresses.map(async (component) => {
-      const metapool = componentMap[component.toLowerCase()]
-        .metaPool as CurveMetapool;
-      const yPool = componentMap[component.toLowerCase()]
-        .yPool as MockYearnV2Vault;
-      const yPoolPricePerShare = await yPool.pricePerShare();
-      const metapoolPrice = await metapool.get_virtual_price();
-      return yPoolPricePerShare.mul(metapoolPrice).div(parseEther("1"));
-    })
-  );
-
-  const componentValuesInUSD = componentVirtualPrices.reduce(
-    (sum: BigNumber, componentPrice, i) => {
-      return sum.add(
-        (componentPrice as BigNumber)
-          .mul(componentAmounts[i])
-          .div(parseEther("1"))
-      );
-    },
-    parseEther("0")
-  );
-  return componentValuesInUSD as unknown as BigNumber;
+  const setValue = await contracts.fourXBatchProcessing.valueOfComponents(componentAddresses,componentAmounts)
+  return setValue.mul(hysiBalance).div(parseEther("1"))
 }
 
 export default async function simulateSlippage(hre): Promise<void> {
   const ethers = hre.ethers;
   const network = hre.network;
   const MAX_SLIPPAGE = 0.002;
-  const INPUT_AMOUNT = parseEther("100000");
-  let mintBlockNumber = 14361457;
+  const INPUT_AMOUNT = BigNumber.from(100_000_000_000);
+  let mintBlockNumber = 14399955;
 
-  const ORGINAL_START_BLOCK_NUMBER = 13956000; // earliest possible block to run the simulation
-  const END_BLOCK_NUMBER = 14399756;
+  const ORGINAL_START_BLOCK_NUMBER = 14385108; // earliest possible block to run the simulation
+  const END_BLOCK_NUMBER = 14932613;
 
   await network.provider.request({
     method: "hardhat_reset",
@@ -79,69 +57,42 @@ export default async function simulateSlippage(hre): Promise<void> {
       contracts.faucet.address,
       "0x152d02c7e14af6800000", // 100k ETH
     ]);
-    await contracts.faucet.sendThreeCrv(50000, signer.address);
+    await contracts.faucet.sendTokens(contracts.token.usdc.address, 50000, signer.address);
 
-    await contracts.token.threeCrv
+    await contracts.token.usdc
       .connect(signer)
-      .approve(contracts.butterBatch.address, 0);
+      .approve(contracts.fourXBatchProcessing.address, 0);
     await contracts.token.setToken
       .connect(signer)
-      .approve(contracts.butterBatch.address, 0);
-    await contracts.token.threeCrv
+      .approve(contracts.fourXBatchProcessing.address, 0);
+    await contracts.token.usdc
       .connect(signer)
-      .approve(contracts.butterBatch.address, parseEther("1000000000"));
+      .approve(contracts.fourXBatchProcessing.address, parseEther("1000000000"));
     await contracts.token.setToken
       .connect(signer)
-      .approve(contracts.butterBatch.address, parseEther("1000000000"));
+      .approve(contracts.fourXBatchProcessing.address, parseEther("1000000000"));
 
-    const threeCrvPrice = await contracts.threePool.get_virtual_price();
-    const inputAmountInUSD = INPUT_AMOUNT.mul(threeCrvPrice).div(
-      parseEther("1")
-    );
-    await contracts.butterBatch
+    const inputAmountInUSD = INPUT_AMOUNT.mul(1e12)
+    await contracts.fourXBatchProcessing
       .connect(signer)
       .depositForMint(INPUT_AMOUNT, signer.address);
-    const mintBatchId = await contracts.butterBatch.currentMintBatchId();
-    await contracts.butterBatch.connect(signer).batchMint();
+    const mintBatchId = await contracts.fourXBatchProcessing.currentMintBatchId();
+    await contracts.fourXBatchProcessing.connect(signer).batchMint();
     const mintingBlock = await ethers.provider.getBlock("latest");
     mintBlockNumber = mintingBlock.number;
 
-    const hysiBalance = await (
-      await contracts.butterBatch.batches(mintBatchId)
-    ).claimableTokenBalance;
+    const mintBatch = await  contracts.fourXBatchProcessing.getBatch(mintBatchId)
+    const hysiBalance = mintBatch.targetTokenBalance
 
-    const componentMap: ComponentMap = {
-      [contracts.token.yFrax.address.toLowerCase()]: {
-        name: "yFRAX",
-        metaPool: contracts.metapools.frax,
-        yPool: contracts.vaults.frax,
-      },
-      [contracts.token.yRai.address.toLowerCase()]: {
-        name: "yRAI",
-        metaPool: contracts.metapools.rai,
-        yPool: contracts.vaults.rai,
-      },
-      [contracts.token.yMusd.address.toLowerCase()]: {
-        name: "yMUSD",
-        metaPool: contracts.metapools.musd,
-        yPool: contracts.vaults.musd,
-      },
-      [contracts.token.yAlusd.address.toLowerCase()]: {
-        name: "yALUSD",
-        metaPool: contracts.metapools.alusd,
-        yPool: contracts.vaults.alusd,
-      },
-    };
 
     const hysiAmountInUSD = await getHysiBalanceInUSD(
       hysiBalance,
-      componentMap,
       contracts
     );
     const slippage =
       bigNumberToNumber(
         inputAmountInUSD.mul(parseEther("1")).div(hysiAmountInUSD)
-      ) - 1;
+      );
     fs.appendFileSync(
       "slippage.csv",
       `\r\n${mintBlockNumber},${

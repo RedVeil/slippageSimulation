@@ -3,11 +3,11 @@ import SetToken from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/
 import SetTokenCreator from "@setprotocol/set-protocol-v2/artifacts/contracts/protocol/SetTokenCreator.sol/SetTokenCreator.json";
 import FactoryMetapoolAbi from "../Curve/FactoryMetapoolAbi.json";
 import {
-  ButterBatchProcessing,
   ERC20,
   CurveMetapool,
   BasicIssuanceModule,
   Faucet,
+  FourXBatchProcessing,
   MockYearnV2Vault,
 } from "../typechain";
 import { utils } from "ethers";
@@ -15,15 +15,11 @@ import { parseEther } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 interface Token {
-  yFrax: ERC20;
-  yRai: ERC20;
-  yMusd: ERC20;
-  yAlusd:ERC20
-  crvFrax: ERC20;
-  crvRai: ERC20;
-  crvMusd: ERC20;
-  crvAlusd:ERC20;
-  threeCrv: ERC20;
+  yD3: ERC20;
+  y3Eur: ERC20;
+  crvD3: ERC20;
+  crv3Eur: ERC20;
+  usdc: ERC20;
   pop: ERC20;
   setToken: ERC20;
 }
@@ -45,10 +41,8 @@ export interface Contracts {
   token: Token;
   faucet: Faucet;
   basicIssuanceModule: BasicIssuanceModule;
-  threePool: CurveMetapool;
-  metapools: Metapools;
-  vaults: Vaults;
-  butterBatch: ButterBatchProcessing;
+  fourXBatchProcessing:FourXBatchProcessing;
+  threePool:CurveMetapool;
 }
 
 const UNISWAP_ROUTER_ADDRESS = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
@@ -58,27 +52,26 @@ const CURVE_FACTORY_METAPOOL_DEPOSIT_ZAP_ADDRESS =
   "0xA79828DF1850E8a3A3064576f380D90aECDD3359";
 
 const SET_TOKEN_CREATOR_ADDRESS = "0xeF72D3278dC3Eba6Dc2614965308d1435FFd748a";
-const SET_BASIC_ISSUANCE_MODULE_ADDRESS =
-  "0xd8EF3cACe8b4907117a45B0b125c68560532F94D";
-
-const THREE_CRV_ADDRESS = "0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490";
+const SET_BASIC_ISSUANCE_MODULE_ADDRESS = "0xd8EF3cACe8b4907117a45B0b125c68560532F94D";
 const THREE_POOL_ADDRESS = "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7";
 
-const Y_CRV_FRAX_ADDRESS = "0xB4AdA607B9d6b2c9Ee07A275e9616B84AC560139";
-const Y_CRV_RAI_ADDRESS = "0x2D5D4869381C4Fce34789BC1D38aCCe747E295AE";
-const Y_CRV_MUSD_ADDRESS = "0x8cc94ccd0f3841a468184aCA3Cc478D2148E1757";
-const Y_CRV_ALUSD_ADDRESS = "0xA74d4B67b3368E83797a35382AFB776bAAE4F5C8";
+const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
-const CRV_FRAX_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
-const CRV_RAI_ADDRESS = "0x6BA5b4e438FA0aAf7C1bD179285aF65d13bD3D90";
-const CRV_MUSD_ADDRESS = "0x1AEf73d49Dedc4b1778d0706583995958Dc862e6";
-const CRV_ALUSD_ADDRESS = "0x43b4FdFD4Ff969587185cDB6f0BD875c5Fc83f8c";
+const USDC_WHALE_ADDRESS = "0xcffad3200574698b78f32232aa9d63eabd290703";
 
+const Y_D3_ADDRESS = "0x16825039dfe2a5b01F3E1E6a2BBF9a576c6F95c4";
+const Y_3EUR_ADDRESS = "0x5AB64C599FcC59f0f2726A300b03166A395578Da";
 
+const D3_METAPOOL_ADDRESS = "0xBaaa1F5DbA42C3389bDbc2c9D2dE134F5cD0Dc89";
+const THREE_EUR_METAPOOL_ADDRESS = "0xb9446c4Ef5EBE66268dA6700D26f96273DE3d571";
 const FRAX_METAPOOL_ADDRESS = "0xd632f22692FaC7611d2AA1C0D552930D43CAEd3B";
-const RAI_METAPOOL_ADDRESS = "0x618788357D0EBd8A37e763ADab3bc575D54c2C7d";
-const MUSD_METAPOOL_ADDRESS = "0x8474DdbE98F5aA3179B3B3F5942D724aFcdec9f6";
-const ALUSD_METAPOOL_ADDRESS = "0x43b4FdFD4Ff969587185cDB6f0BD875c5Fc83f8c";
+const EURS_METAPOOL_ADDRESS = "0x98a7F18d4E56Cfe84E3D081B40001B3d5bD3eB8B";
+
+const FRAX_ADDRESS = "0x853d955aCEf822Db058eb8505911ED77F175b99e";
+
+const ANGLE_ROUTER_ADDRESS = "0xBB755240596530be0c1DE5DFD77ec6398471561d";
+const AG_EUR_ADDRESS = "0x1a7e4e63778B4f12a199C062f3eFdD288afCBce8";
+
  
 export async function deployToken(
   ethers,
@@ -89,21 +82,20 @@ export async function deployToken(
     SET_TOKEN_CREATOR_ADDRESS
   );
   const setTokenAddress = await setTokenCreator.callStatic.create(
-    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_MUSD_ADDRESS,Y_CRV_ALUSD_ADDRESS],
-    [parseEther("25"), parseEther("25"), parseEther("25"), parseEther("25")],
+    [Y_D3_ADDRESS, Y_3EUR_ADDRESS],
+    [parseEther("50"), parseEther("50")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
-    "Butter2",
-    "BTR2"
+    "4X",
+    "4X"
   );
-
   await setTokenCreator.create(
-    [Y_CRV_RAI_ADDRESS, Y_CRV_FRAX_ADDRESS, Y_CRV_MUSD_ADDRESS, Y_CRV_ALUSD_ADDRESS],
-    [parseEther("25"), parseEther("25"), parseEther("25"), parseEther("25")],
+    [Y_D3_ADDRESS, Y_3EUR_ADDRESS],
+    [parseEther("50"), parseEther("50")],
     [SET_BASIC_ISSUANCE_MODULE_ADDRESS],
     owner.address,
-    "Butter2",
-    "BTR2"
+    "4X",
+    "4X"
   );
 
   const setToken = (await ethers.getContractAt(
@@ -111,44 +103,27 @@ export async function deployToken(
     setTokenAddress
   )) as ERC20;
 
-  const yFrax = (await ethers.getContractAt(
-    "ERC20",
-    Y_CRV_FRAX_ADDRESS
-  )) as ERC20;
-  const yRai = (await ethers.getContractAt(
-    "ERC20",
-    Y_CRV_RAI_ADDRESS
-  )) as ERC20;
-  const yMusd = (await ethers.getContractAt(
-    "ERC20",
-    Y_CRV_MUSD_ADDRESS
-  )) as ERC20;
-  const yAlusd = (await ethers.getContractAt(
-    "ERC20",
-    Y_CRV_ALUSD_ADDRESS
+  const usdc = (await ethers.getContractAt(
+    "@openzeppelin/contracts/token/ERC20/ERC20.sol:ERC20",
+    USDC_ADDRESS
   )) as ERC20;
 
-
-  const crvFrax = (await ethers.getContractAt(
+  const yD3 = (await ethers.getContractAt(
     "ERC20",
-    CRV_FRAX_ADDRESS
+    Y_D3_ADDRESS
   )) as ERC20;
-  const crvRai = (await ethers.getContractAt(
+  const y3Eur = (await ethers.getContractAt(
     "ERC20",
-    CRV_RAI_ADDRESS
-  )) as ERC20;
-  const crvMusd = (await ethers.getContractAt(
-    "ERC20",
-    CRV_MUSD_ADDRESS
-  )) as ERC20;
-  const crvAlusd = (await ethers.getContractAt(
-    "ERC20",
-    CRV_ALUSD_ADDRESS
+    Y_3EUR_ADDRESS
   )) as ERC20;
 
-  const threeCrv = (await ethers.getContractAt(
+  const crvD3 = (await ethers.getContractAt(
     "ERC20",
-    THREE_CRV_ADDRESS
+    D3_METAPOOL_ADDRESS
+  )) as ERC20;
+  const crv3Eur = (await ethers.getContractAt(
+    "ERC20",
+    THREE_EUR_METAPOOL_ADDRESS
   )) as ERC20;
 
   const MockERC20 = await ethers.getContractFactory("MockERC20");
@@ -156,15 +131,7 @@ export async function deployToken(
   const pop = await (await MockERC20.deploy("POP", "POP", 18)).deployed();
 
   return {
-    yFrax,
-    yRai,
-    yMusd,
-    yAlusd,
-    crvFrax,
-    crvRai,
-    crvMusd,
-    crvAlusd,
-    threeCrv,
+   yD3,y3Eur,crvD3,crv3Eur,usdc,
     pop,
     setToken,
   };
@@ -225,45 +192,6 @@ export default async function deployContracts(
     THREE_POOL_ADDRESS
   )) as CurveMetapool;
 
-  const fraxMetapoolContract = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    FRAX_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const raiMetapoolContract = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    RAI_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const musdMetapoolContract = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    MUSD_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const alusdMetapoolContract = (await ethers.getContractAt(
-    FactoryMetapoolAbi,
-    ALUSD_METAPOOL_ADDRESS
-  )) as CurveMetapool;
-
-  const yFraxVault = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    Y_CRV_FRAX_ADDRESS
-  )) as MockYearnV2Vault;
-
-  const yRaiVault = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    Y_CRV_RAI_ADDRESS
-  )) as MockYearnV2Vault;
-
-  const yMusdVault = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    Y_CRV_MUSD_ADDRESS
-  )) as MockYearnV2Vault;
-
-  const yAlusdVault = (await ethers.getContractAt(
-    "MockYearnV2Vault",
-    Y_CRV_ALUSD_ADDRESS
-  )) as MockYearnV2Vault;
 
   const basicIssuanceModule = await ethers.getContractAt(
     BasicIssuanceModuleAbi.abi,
@@ -277,57 +205,42 @@ export default async function deployContracts(
       "0x0000000000000000000000000000000000000000"
     );
 
-  const YTOKEN_ADDRESSES = [
-    token.yRai.address,
-    token.yFrax.address,
-    token.yMusd.address,
-    token.yAlusd.address
-  ];
-  const CRV_DEPENDENCIES = [
-    {
-      curveMetaPool: raiMetapoolContract.address,
-      crvLPToken: token.crvRai.address,
-    },
-    {
-      curveMetaPool: fraxMetapoolContract.address,
-      crvLPToken: token.crvFrax.address,
-    },
-    {
-      curveMetaPool: musdMetapoolContract.address,
-      crvLPToken: token.crvMusd.address,
-    },
-    {
-      curveMetaPool: alusdMetapoolContract.address,
-      crvLPToken: token.crvAlusd.address,
-    },
-  ];
-
-  const ButterBatchProcessing = await ethers.getContractFactory(
-    "ButterBatchProcessing"
-  );
-  const butterBatch = await (
-    await ButterBatchProcessing.deploy(
+  const fourXBatchProcessing = await (
+    await (
+      await ethers.getContractFactory("FourXBatchProcessing")
+    ).deploy(
       contractRegistry.address,
       staking.address,
-      token.setToken.address,
-      token.threeCrv.address,
-      threePool.address,
-      basicIssuanceModule.address,
-      YTOKEN_ADDRESSES,
-      CRV_DEPENDENCIES,
-      0,
-      parseEther("0"),
-      parseEther("0")
+      ethers.constants.AddressZero,
+      { sourceToken: token.usdc.address, targetToken: token.setToken.address }, // mint batch
+      { sourceToken: token.setToken.address, targetToken: token.usdc.address }, // redeem batch
+      SET_BASIC_ISSUANCE_MODULE_ADDRESS,
+      [Y_D3_ADDRESS,Y_3EUR_ADDRESS],
+      [
+        {
+          swapPool: FRAX_METAPOOL_ADDRESS,
+          curveMetaPool: D3_METAPOOL_ADDRESS,
+          angleRouter: ethers.constants.AddressZero,
+        },
+        {
+          swapPool: EURS_METAPOOL_ADDRESS,
+          curveMetaPool: THREE_EUR_METAPOOL_ADDRESS,
+          angleRouter: ANGLE_ROUTER_ADDRESS,
+        },
+      ],
+      [FRAX_ADDRESS, AG_EUR_ADDRESS],
+      {
+        batchCooldown: 0,
+        mintThreshold: 0,
+        redeemThreshold: 0,
+      }
     )
-  ).deployed();
-
-  await butterBatch.setApprovals();
+  ).deployed() as FourXBatchProcessing
 
   await aclRegistry.grantRole(ethers.utils.id("DAO"), owner.address);
   await aclRegistry.grantRole(ethers.utils.id("Keeper"), owner.address);
 
-  await butterBatch.connect(owner).setMintSlippage(1000);
-  await butterBatch.connect(owner).setRedeemSlippage(1000);
+  await fourXBatchProcessing.connect(owner).setSlippage(1000,1000);
 
   await contractRegistry
     .connect(owner)
@@ -354,7 +267,7 @@ export default async function deployContracts(
   await keeperIncentive
     .connect(owner)
     .createIncentive(
-      utils.formatBytes32String("ButterBatchProcessing"),
+      utils.formatBytes32String("FourXBatchProcessing"),
       0,
       true,
       false
@@ -363,7 +276,7 @@ export default async function deployContracts(
   await keeperIncentive
     .connect(owner)
     .createIncentive(
-      utils.formatBytes32String("ButterBatchProcessing"),
+      utils.formatBytes32String("FourXBatchProcessing"),
       0,
       true,
       false
@@ -372,27 +285,15 @@ export default async function deployContracts(
   await keeperIncentive
     .connect(owner)
     .addControllerContract(
-      utils.formatBytes32String("ButterBatchProcessing"),
-      butterBatch.address
+      utils.formatBytes32String("FourXBatchProcessing"),
+      fourXBatchProcessing.address
     );
 
   return {
     token,
     faucet,
     basicIssuanceModule,
-    threePool,
-    metapools: {
-      frax: fraxMetapoolContract,
-      rai: raiMetapoolContract,
-      musd: musdMetapoolContract,
-      alusd:alusdMetapoolContract
-    },
-    vaults: {
-      frax: yFraxVault,
-      rai: yRaiVault,
-      musd: yMusdVault,
-      alusd:yAlusdVault
-    },
-    butterBatch,
+    fourXBatchProcessing,
+    threePool
   };
 }

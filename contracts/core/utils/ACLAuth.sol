@@ -22,6 +22,11 @@ abstract contract ACLAuth {
   bytes32 internal constant DAO_ROLE = 0xd0a4ad96d49edb1c33461cebc6fb2609190f32c904e3c3f5877edb4488dee91e;
 
   /**
+   *  @dev Equal to keccak256("GUARDIAN_ROLE")
+   */
+  bytes32 internal constant GUARDIAN_ROLE = 0x55435dd261a4b9b3364963f7738a7a662ad9c84396d64be3365284bb7f0a5041;
+
+  /**
    *  @dev Equal to keccak256("ApprovedContract")
    */
   bytes32 internal constant APPROVED_CONTRACT_ROLE = 0xfb639edf4b4a4724b8b9fb42a839b712c82108c1edf1beb051bcebce8e689dc4;
@@ -37,6 +42,16 @@ abstract contract ACLAuth {
    */
   modifier onlyRole(bytes32 role) {
     _requireRole(role);
+    _;
+  }
+
+  /**
+   *  @notice Require that `msg.sender` has at least one of the given roles
+   *  @param roleA bytes32 role ID
+   *  @param roleB bytes32 role ID
+   */
+  modifier onlyRoles(bytes32 roleA, bytes32 roleB) {
+    require(_hasRole(roleA, msg.sender) == true || _hasRole(roleB, msg.sender) == true, "you dont have the right role");
     _;
   }
 
