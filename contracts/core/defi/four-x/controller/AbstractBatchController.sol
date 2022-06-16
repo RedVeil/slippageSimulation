@@ -6,22 +6,22 @@ pragma solidity ^0.8.0;
 import "./../../../interfaces/IBatchStorage.sol";
 import "../../../utils/ACLAuth.sol";
 import "../../../interfaces/IStaking.sol";
-import "./AbstractRedeemFee.sol";
+import "./AbstractFee.sol";
 import "./AbstractSweethearts.sol";
 import "../storage/AbstractViewableBatchStorage.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "../FourXBatchVault.sol";
+import "../ThreeXBatchVault.sol";
 
 abstract contract AbstractBatchController is
   ACLAuth,
   Pausable,
   ReentrancyGuard,
-  AbstractRedeemFee,
-  AbstractSweethearts,
+  AbstractFee,
   AbstractViewableBatchStorage
 {
   using SafeERC20 for IERC20;
+
   struct ProcessingThreshold {
     uint256 batchCooldown;
     uint256 mintThreshold;
@@ -59,17 +59,23 @@ abstract contract AbstractBatchController is
   event DepositedUnclaimedSetTokenForRedeem(uint256 amount, address indexed account);
   event Withdrawal(address indexed to, uint256 amount);
 
-  constructor(IContractRegistry __contractRegistry, AbstractBatchStorage _batchStorage)
-    AbstractViewableBatchStorage(address(batchStorage))
-  {
-    if (address(0) == address(_batchStorage)) {
-      batchStorage = new FourXBatchVault(__contractRegistry, address(this));
-    } else {
-      batchStorage = AbstractBatchStorage(_batchStorage);
-    }
-  }
+  constructor(IContractRegistry __contractRegistry) AbstractViewableBatchStorage() {}
 
   /* ========== ADMIN ========== */
+
+  /**
+   * @notice sets batch storage contract
+   * @dev All function with the modifer `whenNotPaused` cant be called anymore. Namly deposits and mint/redeem
+   */
+  function setBatchStorage(AbstractBatchStorage _address) external onlyRoles(DAO_ROLE, GUARDIAN_ROLE) {
+    batchStorage = _address;
+    if (currentMintBatchId == "") {
+      _createBatch(BatchType.Mint);
+    }
+    if (currentRedeemBatchId == "") {
+      _createBatch(BatchType.Redeem);
+    }
+  }
 
   /**
    * @notice Pauses the contract.
@@ -139,7 +145,7 @@ abstract contract AbstractBatchController is
    * @notice Changes the the ProcessingThreshold
    * @param _cooldown Cooldown in seconds
    * @param _mintThreshold Amount of MIM necessary to mint immediately
-   * @param _redeemThreshold Amount of 4X necessary to mint immediately
+   * @param _redeemThreshold Amount of 3X necessary to mint immediately
    * @dev The cooldown is the same for redeem and mint batches
    */
   function setProcessingThreshold(
@@ -175,7 +181,7 @@ abstract contract AbstractBatchController is
 
   /**
    * @notice deposits funds in the current redeem batch
-   * @param amount amount of 4X to be redeemed
+   * @param amount amount of 3X to be redeemed
    */
   function depositForRedeem(uint256 amount) external nonReentrant whenNotPaused onlyApprovedContractOrEOA {
     redeemBatchTokens.sourceToken.safeTransferFrom(msg.sender, address(this), amount);
@@ -185,7 +191,7 @@ abstract contract AbstractBatchController is
   /**
    * @notice This function allows a user to withdraw their funds from a batch before that batch has been processed
    * @param _batchId From which batch should funds be withdrawn from
-   * @param _amountToWithdraw Amount of 4X or DAI to be withdrawn from the queue (depending on mintBatch / redeemBatch)
+   * @param _amountToWithdraw Amount of 3X or DAI to be withdrawn from the queue (depending on mintBatch / redeemBatch)
    * @param _withdrawFor User that gets the shares attributed to (for use in zapper contract)
    */
   function withdrawFromBatch(
@@ -200,7 +206,7 @@ abstract contract AbstractBatchController is
   /**
    * @notice This function allows a user to withdraw their funds from a batch before that batch has been processed
    * @param _batchId From which batch should funds be withdrawn from
-   * @param _amountToWithdraw Amount of 4X or DAI to be withdrawn from the queue (depending on mintBatch / redeemBatch)
+   * @param _amountToWithdraw Amount of 3X or DAI to be withdrawn from the queue (depending on mintBatch / redeemBatch)
    * @param _withdrawFor User that gets the shares attributed to (for use in zapper contract)
    */
   function withdrawFromBatch(
@@ -214,7 +220,7 @@ abstract contract AbstractBatchController is
   /**
    * @notice This function allows a user to withdraw their funds from a batch before that batch has been processed
    * @param batchId From which batch should funds be withdrawn from
-   * @param amountToWithdraw Amount of 4X or DAI to be withdrawn from the queue (depending on mintBatch / redeemBatch)
+   * @param amountToWithdraw Amount of 3X or DAI to be withdrawn from the queue (depending on mintBatch / redeemBatch)
    * @param withdrawFor User that gets the shares attributed to (for use in zapper contract)
    * @param recipient address that receives the withdrawn tokens
    */
@@ -225,7 +231,7 @@ abstract contract AbstractBatchController is
     address recipient
   ) internal returns (uint256) {
     require(
-      _hasRole(keccak256("FourXZapper"), msg.sender) || msg.sender == withdrawFor,
+      _hasRole(keccak256("ThreeXZapper"), msg.sender) || msg.sender == withdrawFor,
       "you cant transfer other funds"
     );
 
@@ -253,13 +259,16 @@ abstract contract AbstractBatchController is
       _claimFor,
       address(this)
     );
+
+    require(batchType == BatchType.Mint, "wrong batch type");
+
     emit Claimed(recipient, batchType, accountBalance, tokenAmountClaimed);
 
     staking.stakeFor(tokenAmountClaimed, _claimFor);
   }
 
   /**
-   * @notice Claims funds after the batch has been processed (get 4X from a mint batch and DAI from a redeem batch)
+   * @notice Claims funds after the batch has been processed (get 3X from a mint batch and DAI from a redeem batch)
    * @param batchId Id of batch to claim from
    * @param _claimFor User that gets the shares attributed to (for use in zapper contract)
    */
@@ -269,18 +278,6 @@ abstract contract AbstractBatchController is
       _claimFor,
       address(this)
     );
-
-    if (batchType == BatchType.Redeem) {
-      //We only want to apply a fee on redemption of 4X
-      //Sweethearts are partner addresses that we want to exclude from this fee
-      if (!sweethearts[_claimFor]) {
-        //Fee is deducted from batch.targetToken -- This allows it to work with the Zapper
-        //Fes are denominated in BasisPoints
-        uint256 fee = (tokenAmountToClaim * redemptionFee.rate) / 10_000;
-        redemptionFee.accumulated += fee;
-        tokenAmountToClaim -= fee;
-      }
-    }
 
     emit Claimed(recipient, batchType, accountBalance, tokenAmountToClaim);
 
@@ -309,7 +306,7 @@ abstract contract AbstractBatchController is
       Batch memory
     )
   {
-    require(_hasRole(keccak256("FourXZapper"), msg.sender) || msg.sender == claimFor, "you cant transfer other funds");
+    require(_hasRole(keccak256("ThreeXZapper"), msg.sender) || msg.sender == claimFor, "you cant transfer other funds");
 
     Batch memory batch = batchStorage.getBatch(batchId);
     // todo try replacing batchId with batch to avoid having to lookup the batch again in dependent functions
@@ -358,8 +355,8 @@ abstract contract AbstractBatchController is
   }
 
   /**
-   * @notice Deposit either 4X or DAI in their respective batches
-   * @param _amount The amount of DAI or 4X a user is depositing
+   * @notice Deposit either 3X or DAI in their respective batches
+   * @param _amount The amount of DAI or 3X a user is depositing
    * @param _batchId The current reedem or mint batch id to place the funds in the next batch to be processed
    * @param _depositFor User that gets the shares attributed to (for use in zapper contract)
    * @dev This function will be called by depositForMint or depositForRedeem and simply reduces code duplication
